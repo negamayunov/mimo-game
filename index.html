@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>МИМО</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div id="start-screen" class="screen">
+            <h1>МИМО</h1>
+            <p>Стреляй прямо в сердце!</p>
+            <button id="start-button">Начать игру</button>
+            <!-- Здесь можно добавить информацию о вас как о музыканте и ссылки на ваши соцсети -->
+            <div class="about-artist">
+                <h2>Гвозди band</h2>
+                <p>Крейзи группа, ю ноу! Сделали эту игру без знания джаваскрипта.</p>
+                <!-- Социальные сети и ссылки на стриминговые платформы -->
+                <div class="social-links">
+                    <!-- Замените # на фактические ссылки -->
+                    <a href="#" target="_blank">SoundCloud</a>
+                    <a href="#" target="_blank">Spotify</a>
+                    <a href="#" target="_blank">VK</a>
+                    <!-- Добавьте другие платформы по желанию -->
+                </div>
+            </div>
+        </div>
+        
+        <div id="game-screen" class="screen hidden">
+            <div class="game-stats">
+                <div class="score">Очки: <span id="score">0</span></div>
+                <div class="combo">Комбо: <span id="combo">0</span></div>
+                <div class="timer">Время: <span id="timer">90</span> сек</div>
+                <div class="progress-container">
+                    <div id="progress-bar"></div>
+                </div>
+            </div>
+            <!-- Добавить в game-screen, перед game-area -->
+            <div id="countdown-overlay" class="countdown-overlay">
+                <div id="countdown-timer" class="countdown-timer">3</div>
+            </div>
+            <div id="game-area"></div>
+            <div class="controls">
+                <button id="mute-button">Выключить звук</button>
+                <button id="pause-button">Пауза</button>
+            </div>
+        </div>
+        
+        <div id="end-screen" class="screen hidden">
+            <h1>Игра окончена!</h1>
+            <div class="final-score">Ваш счет: <span id="final-score">0</span></div>
+            <button id="restart-button">Играть снова</button>
+            <div class="share-section">
+                <h2>Понравилась музыка?</h2>
+                <p>Послушайте полный трек здесь:</p>
+                <!-- Ссылки на ваш релиз -->
+                <div class="music-links">
+                    <a href="#" target="_blank">Послушать на Spotify</a>
+                    <a href="#" target="_blank">Послушать на Apple Music</a>
+                    <!-- Добавьте другие платформы по желанию -->
+                </div>
+                <!-- Кнопки для шеринга -->
+                <div class="share-buttons">
+                    <button id="share-vk">Поделиться в VK</button>
+                    <button id="share-telegram">Поделиться в Telegram</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>

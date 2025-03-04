@@ -1,0 +1,315 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Arial', sans-serif;
+    background-color: #121212;
+    color: #ffffff;
+    overflow: hidden;
+}
+
+.game-container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.screen {
+    width: 800px;
+    max-width: 90%;
+    text-align: center;
+    padding: 20px;
+}
+
+.hidden {
+    display: none;
+}
+
+/* Стили для стартового экрана */
+#start-screen h1 {
+    font-size: 3rem;
+    margin-bottom: 20px;
+    color: #f06;
+}
+
+#start-screen p {
+    font-size: 1.2rem;
+    margin-bottom: 30px;
+}
+
+button {
+    background-color: #f06;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 1.2rem;
+    cursor: pointer;
+    border-radius: 5px;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #e05;
+}
+
+.about-artist {
+    margin-top: 40px;
+    padding: 20px;
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+}
+
+.social-links {
+    margin-top: 15px;
+}
+
+.social-links a {
+    color: #f06;
+    margin: 0 10px;
+    text-decoration: none;
+}
+
+.social-links a:hover {
+    text-decoration: underline;
+}
+
+.countdown-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+}
+
+@keyframes countdown {
+    0% { 
+        transform: scale(0.5); 
+        opacity: 0; 
+    }
+    50% { 
+        transform: scale(1.2); 
+        opacity: 1; 
+    }
+    100% { 
+        transform: scale(1); 
+        opacity: 1; 
+    }
+}
+
+.countdown-timer {
+    font-size: 10rem;
+    color: #f06;
+    font-weight: bold;
+    animation: countdown 1s linear forwards;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+/* Стили для игрового экрана */
+#game-screen {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+.game-stats {
+    position: absolute;
+    top: 20px;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    padding: 0 50px;
+    font-size: 1.5rem;
+    z-index: 10;
+}
+
+.progress-container {
+    width: 100%;
+    height: 10px;
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    margin-top: 10px;
+}
+
+#progress-bar {
+    height: 100%;
+    width: 0;
+    background-color: #f06;
+    border-radius: 5px;
+    transition: width 0.3s;
+}
+
+#game-area {
+    width: 100%;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+.target {
+    position: absolute;
+    width: 60px;
+    height: 60px;
+    background-color: #f06;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-size: 1.5rem;
+    color: white;
+    cursor: pointer;
+    user-select: none;
+    transition: transform 0.1s;
+}
+
+.target:hover {
+    transform: scale(1.1);
+}
+
+.target.hit {
+    animation: hit 0.3s forwards;
+}
+
+.target.stationary {
+    background-color: #f06;
+    transition: transform 0.2s;
+}
+
+.target.moving {
+    background-color: #0af;
+    transition: all 0.5s;
+}
+
+.target.burst {
+    background-color: #0f6;
+    animation: pulse 1s infinite alternate;
+}
+
+@keyframes pulse {
+    from { transform: scale(0.8); }
+    to { transform: scale(1.2); }
+}
+
+@keyframes hit {
+    0% {
+        transform: scale(1);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+.controls {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+/* Стили для экрана завершения игры */
+#end-screen h1 {
+    font-size: 3rem;
+    margin-bottom: 20px;
+    color: #f06;
+}
+
+.final-score {
+    font-size: 2rem;
+    margin-bottom: 30px;
+}
+
+.share-section {
+    margin-top: 40px;
+}
+
+.music-links {
+    margin: 20px 0;
+}
+
+.music-links a {
+    display: block;
+    margin: 10px 0;
+    color: #f06;
+    text-decoration: none;
+}
+
+.share-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 15px;
+    margin-top: 20px;
+}
+
+/* Добавьте эти стили для таймера */
+.timer {
+    font-size: 1.5rem;
+    color: #fff;
+    text-shadow: 0 0 5px rgba(255, 0, 102, 0.7);
+}
+
+/* Стили для детальной статистики на экране завершения */
+.final-score {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px auto;
+    max-width: 400px;
+}
+
+.stat-item {
+    margin: 10px 0;
+    font-size: 1.3rem;
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-value {
+    color: #f06;
+    font-weight: bold;
+}
+
+/* Анимация для таймера, когда мало времени */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+}
+
+.timer.low-time {
+    color: #ff3333;
+    animation: pulse 0.8s infinite;
+}
+
+/* Адаптивность для мобильных устройств */
+@media (max-width: 768px) {
+    .game-stats {
+        padding: 0 20px;
+        font-size: 1rem;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    #start-screen h1 {
+        font-size: 2rem;
+    }
+    
+    button {
+        font-size: 1rem;
+    }
+}
