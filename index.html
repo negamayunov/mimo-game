@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>YA SNOVA MIMO – Good View & Crowds</title>
+<style>
+body{margin:0;overflow:hidden;background:#111;font-family:sans-serif;color:#fff}
+canvas{display:block}
+#ui{position:absolute;top:10px;left:10px;font-size:18px}
+#msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+     background:#0008;padding:30px 50px;font-size:28px;text-align:center;display:none}
+#msg button{padding:10px 20px;font-size:20px;margin-top:15px;cursor:pointer}
+
+#preloader{
+  position:fixed; inset:0;
+  background:#0a1030;
+  color:#fff;
+  font-family:sans-serif;
+  display:flex; flex-direction:column;
+  align-items:center; justify-content:center;
+  gap:25px;
+  z-index:10;
+}
+#preloader h1{ font-size:48px; margin:0 0 20px; }
+#social{ display:flex; gap:20px; }
+#social a{
+  color:#fff; background:#ffffff20;
+  padding:8px 16px; border-radius:6px;
+  text-decoration:none; font-size:18px;
+  transition:background .2s;
+}
+#social a:hover{ background:#ffffff40; }
+#startBtn{
+  font-size:24px; padding:12px 32px;
+  border:none; border-radius:8px; cursor:pointer;
+  background:#00ff88; color:#000;
+}
+#startBtn:disabled{ background:#666; cursor:not-allowed; }
+</style>
+</head>
+<body>
+<audio id="bgm" loop><source src="song.mp3" type="audio/mpeg"/></audio>
+<div id="ui">
+  Fire rate: <span id="rate">1.0</span>/sec<br>
+  Bullets / shot: <span id="count">1</span>
+</div>
+<div id="msg">
+  <div id="msgText"></div>
+  <button onclick="location.reload()">Restart</button>
+</div>
+
+<!-- preloader + menu -->
+<div id="preloader">
+  <h1>MIMO!</h1>
+
+  <div id="social">
+    <a href="https://t.me/gvozdi_band"  target="_blank">Telegram</a>
+    <a href="https://vk.com/gvozdi_band" target="_blank">VK</a>
+    <a href="https://www.youtube.com/channel/UCzNrI47UMc8ie3cnITUW-Dg" target="_blank">YouTube</a>
+  </div>
+
+  <button id="startBtn" disabled>Загрузка…</button>
+</div>
+
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+/* ---------- preloader ---------- */
+const bgmEl   = document.getElementById('bgm');
+const preEl   = document.getElementById('preloader');
+const startBtn = document.getElementById('startBtn');
+
+let audioReady = false;
+
+// если аудио уже в кеше / загрузилось мгновенно
+bgmEl.addEventListener('canplaythrough', () => {
+  audioReady = true;
+  startBtn.disabled = false;
+  startBtn.textContent = 'Начать игру';
+}, { once: true });
+
+// если аудио не успело загрузиться за 100 мс, показываем "Загрузка..."
+setTimeout(() => {
+  if (!audioReady) {
+    startBtn.disabled = true;
+    startBtn.textContent = 'Загрузка…';
+  }
+}, 100);
+
+startBtn.addEventListener('click', () => {
+  bgmEl.play()
+    .then(() => {
+      preEl.style.display = 'none';
+      started = true;
+    })
+    .catch(() => {
+      // Если аудио заблокировано, всё равно запускаем игру
+      preEl.style.display = 'none';
+      started = true;
+    });
+});
+
+/* ---------- basic scene ---------- */
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setClearColor(0x0a1030);   // тёмно-синий фон
+document.body.appendChild(renderer.domElement);
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
+const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
+dirLight.position.set(0,10,5); scene.add(dirLight);
+
+/* ---------- player ---------- */
+/* ---------- nail-hero ---------- */
+const nailBody = new THREE.ConeGeometry(0.08, 1.0, 100);   // острый конус
+const nailHead = new THREE.CylinderGeometry(0.18, 0.18, 0.15, 16);      // шляпка
+const nailBodyMesh = new THREE.Mesh(nailBody);
+const nailHeadMesh = new THREE.Mesh(nailHead);
+const playerMat = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, metalness: 0.8, roughness: 0.2 });
+nailBodyMesh.material = nailHeadMesh.material = playerMat;
+
+nailBodyMesh.position.y = -0.5;   // острие внизу
+nailHeadMesh.position.y = 0.075;   // поднимаем шляпку над стержнем (0.5 + 0.15/2)
+nailBodyMesh.rotation.z = Math.PI;   // острие вниз
+
+const player = new THREE.Group();  // теперь используем Group
+player.add(nailBodyMesh);
+player.add(nailHeadMesh);
+scene.add(player);
+
+player.rotation.x = 0;   // стоит вертикально вдоль оси Y
+player.position.y = 0.8;           // центр модели на 0.8 — гвоздь над дорожкой
+
+
+
+/* ---------- shooting params ---------- */
+let fireRate = 1, bulletCount = 1, lastShot = 0;
+
+/* ---------- bullets ---------- */
+const bulletGeo  = new THREE.SphereGeometry(0.08,8,8);
+const bigBulletGeo = new THREE.SphereGeometry(0.25,16,16);
+const bullets = [];
+
+/* ---------- enemies ---------- */
+/* ---------- simple heart geometry ---------- */
+function createHeartGeometry(size = 0.4){
+  const shape = new THREE.Shape();
+  const s = size;
+  shape.moveTo(0, 0);
+  shape.bezierCurveTo( s,  s,  2*s,  s,  2*s, -s);
+  shape.bezierCurveTo( 2*s, -2*s,  s, -2.5*s, 0, -3*s);
+  shape.bezierCurveTo(-s, -2.5*s, -2*s, -2*s, -2*s, -s);
+  shape.bezierCurveTo(-2*s,  s, -s,  s, 0, 0);
+
+  const extrudeSettings = { depth: 0.1, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 };
+  return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+}
+const enemyGeo = createHeartGeometry(0.2);   // 0.2 ≈ прежний размер
+const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
+const enemies = [];
+
+/* ---------- gates ---------- */
+const gateGeo = new THREE.BoxGeometry(2,2,0.2);
+const gates = [];
+
+const gateTypes = {
+  ratePlus:   {label:'СКОРОСТЬ +0.5', action:'rate',  mode:'add',  val: 0.5},
+  rateMinus:  {label:'СКОРОСТЬ -0.5', action:'rate',  mode:'add',  val:-0.5},
+  rateMul2:   {label:'СКОРОСТЬ x2',    action:'rate',  mode:'mul',  val: 2},
+  rateDiv2:   {label:'СКОРОСТЬ /2',    action:'rate',  mode:'mul',  val: 0.5},
+  countPlus1: {label:'ПУЛИ +1',        action:'count', mode:'add',  val: 1},
+  countMinus1:{label:'ПУЛИ -1',        action:'count', mode:'add',  val:-1},
+  countMul2:  {label:'ПУЛИ x2',        action:'count', mode:'mul',  val: 2},
+  countMul3:  {label:'ПУЛИ x3',        action:'count', mode:'mul',  val: 3}
+};
+
+/* ---------- dynamic spawning ---------- */
+let lastSpawnZ = 0;
+const SONG_LENGTH_SEC = 215;
+const FPS = 60;
+const levelLength = SONG_LENGTH_SEC * FPS;
+
+/* ---------- infinite runway ---------- */
+const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
+const RUNWAY_LENGTH = 40;
+const EDGE_HEIGHT   = 0.2;
+
+const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+const edgeMat   = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+
+/* геометрии остаются теми же */
+const stripGeo = new THREE.PlaneGeometry(RUNWAY_WIDTH, RUNWAY_LENGTH);
+const edgeGeo  = new THREE.BoxGeometry(0.1, EDGE_HEIGHT, RUNWAY_LENGTH); // тонкие бортики
+
+// пул сегментов
+const runwaySegments = [];
+function createSegment(z){
+  // полоса
+  const strip = new THREE.Mesh(stripGeo, runwayMat);
+  strip.rotation.x = -Math.PI / 2;
+  strip.position.set(0, -0.5, z);
+  scene.add(strip);
+
+  // левый бортик
+  const leftEdge = new THREE.Mesh(edgeGeo, edgeMat);
+  leftEdge.position.set(-RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, z);
+  scene.add(leftEdge);
+
+  // правый бортик
+  const rightEdge = new THREE.Mesh(edgeGeo, edgeMat);
+  rightEdge.position.set( RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, z);
+  scene.add(rightEdge);
+
+  runwaySegments.push({ strip, leftEdge, rightEdge, centerZ: z });
+}
+
+// создаём первые два сегмента
+createSegment(0);
+createSegment(-RUNWAY_LENGTH);
+
+// в main-loop (в конце animate(), перед renderer.render) добавьте:
+function updateRunway(){
+  const ahead = player.position.z - 2 * RUNWAY_LENGTH; // точка «на 2 сегмента» впереди игрока
+  const last  = runwaySegments[runwaySegments.length - 1];
+
+  // если последний сегмент ещё не настолько далеко, добавляем новый
+  if (last.centerZ > ahead){
+    createSegment(last.centerZ - RUNWAY_LENGTH);
+  }
+
+  // удаляем старые сегменты, которые уже позади камеры
+  for (let i = runwaySegments.length - 1; i >= 0; i--){
+    const seg = runwaySegments[i];
+    if (seg.centerZ > player.position.z + RUNWAY_LENGTH){
+      scene.remove(seg.strip);
+      scene.remove(seg.leftEdge);
+      scene.remove(seg.rightEdge);
+      runwaySegments.splice(i, 1);
+    }
+  }
+}
+
+function spawnWave(){
+  /* 1. мощность и кол-во */
+  const power     = Math.min(1, (fireRate - 0.5)/4 + (bulletCount - 1)/10);
+  const crowdSize = 3 + Math.floor(power * power * 100 * difficultyFactor);
+
+  /* 2. выбираем сторону кластера */
+  const side     = Math.random() < 0.5 ? -1 : 1; // -1 = лево, +1 = право
+  const clusterX = side * (1 + Math.random() * 2);
+  const clampedClusterX = THREE.MathUtils.clamp(clusterX, -2.5, 2.5); // не выходит за бортики
+  const spawnZ   = lastSpawnZ - 20;
+
+  lastSpawnZ = spawnZ;
+
+  /* 3. спавним кучно */
+  for (let i = 0; i < crowdSize; i++){
+    const e = new THREE.Mesh(enemyGeo, enemyMat);
+    e.position.set(
+      clampedClusterX + (Math.random()-0.5)*1.5,
+      0,
+      spawnZ + (Math.random()-0.5)*8
+    );
+    scene.add(e); enemies.push(e);
+    e.position.y = 0.3;          // приподнять над дорожкой
+    e.lookAt(player.position.x, 0.3, player.position.z); // «смотрит» на игрока
+  }
+
+  /* gate */
+  if (Math.random() < 0.7){
+    const keys = Object.keys(gateTypes);
+    const k = keys[Math.floor(Math.random()*keys.length)];
+    const data = gateTypes[k];
+
+    const gateGroup = new THREE.Group();
+    const gateMesh  = new THREE.Mesh(
+      gateGeo,
+      new THREE.MeshStandardMaterial({color: data.action==='rate'?0x00ffff:0xff00ff})
+    );
+    gateMesh.userData = data;
+    gateGroup.add(gateMesh);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = 256; canvas.height = 128;
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,256,128);
+    ctx.fillStyle='#fff'; ctx.font='bold 30px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(data.label,128,64);
+    const tex = new THREE.CanvasTexture(canvas);
+    const textPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(2,1),
+      new THREE.MeshBasicMaterial({map:tex, transparent:true})
+    );
+    textPlane.position.z = 0.11;
+    gateGroup.add(textPlane);
+
+    gateGroup.position.set(
+      THREE.MathUtils.randFloat(-2.5, 2.5), // уже внутри [-3, 3]
+      0,
+      spawnZ + Math.random()*10
+    );
+    scene.add(gateGroup); gates.push(gateGroup);
+  }
+}
+
+/* ---------- controls ---------- */
+let mouseX = 0;
+window.addEventListener('mousemove', e => mouseX = (e.clientX/innerWidth - 0.5) * 6);
+
+/* ---------- camera ---------- */
+camera.position.set(0,5,6);                       // <-- ближе
+camera.lookAt(0,-1,player.position.z - 3);        // <-- ниже и точнее
+
+let speed = 0.1, started = false, gameOver = false;
+// document.addEventListener('click', () => {
+//   if (!started){ document.getElementById('bgm').play(); started = true; }
+// });
+
+/* ---------- shooting ---------- */
+function shoot(time){
+  if (!started || gameOver) return;
+  if (time - lastShot < 1000 / fireRate) return;
+  lastShot = time;
+
+  const useBig = bulletCount >= 10;
+  const geo = useBig ? bigBulletGeo : bulletGeo;
+  const mat = useBig
+    ? new THREE.MeshStandardMaterial({color:0xff8800})
+    : new THREE.MeshStandardMaterial({color:0xffff00});
+  const count = useBig ? 1 : bulletCount;
+
+  for (let i = 0; i < count; i++){
+    const b = new THREE.Mesh(geo, mat);
+    const angle = 0;                                   // <-- ровно вперёд
+    const spd = 0.4;
+    b.position.set(
+      player.position.x + (i - (count - 1) / 2) * 0.4, // горизонтальный разброс
+      0,
+      player.position.z - 0.5
+    );
+    scene.add(b);
+    bullets.push({mesh:b, vx:0, vz:-spd});              // летят строго вперёд
+  }
+}
+
+/* ---------- game-over screen ---------- */
+function showMsg(text){
+  document.getElementById('msgText').innerText = text;
+  document.getElementById('msg').style.display = 'block';
+}
+
+/* ---------- enemy AI ---------- */
+const DETECT_DISTANCE = 20;   // на каком расстоянии враг замечает игрока
+const ENEMY_SPEED     = 0.1; // базовая скорость врага
+const difficultyFactor = 0.5;   // <-- крутите этим для сложности (0.5–2.0)
+
+function updateEnemiesAI(){
+  enemies.forEach(e=>{
+    const dist = e.position.distanceTo(player.position);
+    if (dist < DETECT_DISTANCE){
+      // направление к игроку
+      const dir = new THREE.Vector3().subVectors(player.position, e.position).normalize();
+      dir.y = 0; // не летим вверх
+      dir.z *= 0.2; // не летим вперёд
+      // ускорение пропорционально difficultyFactor
+      e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor);
+    }
+  });
+}
+
+/* ---------- main loop ---------- */
+function animate(time){
+  requestAnimationFrame(animate);
+  if (!started || gameOver) return;
+
+  /*  ✔  ИСПРАВЛЕНИЕ 1: всегда вызываем shoot  */
+  shoot(time);
+
+  /* player movement */
+  player.position.x += (mouseX - player.position.x) * 0.1;
+  player.position.x = THREE.MathUtils.clamp(player.position.x, -3, 3); // <-- новая строка
+  player.position.z -= speed;
+
+  /* наклон гвоздя в сторону движения */
+  const tilt = (mouseX - player.position.x) * 0.15; // чем больше разница, тем сильнее наклон
+  player.rotation.z = THREE.MathUtils.clamp(tilt, -0.4, 0.4);
+
+  updateEnemiesAI();
+
+  /* continuous spawning */
+  if (player.position.z - 20 < lastSpawnZ){
+    spawnWave();
+  }
+
+  /* bullets */
+  for (let i = bullets.length - 1; i >= 0; i--){
+    const b = bullets[i];
+    b.mesh.position.x += b.vx;
+    b.mesh.position.z += b.vz;
+    if (b.mesh.position.length() > levelLength + 50){
+      scene.remove(b.mesh); bullets.splice(i,1);
+    }
+  }
+
+  /* bullet–enemy collision */
+  for (let i = bullets.length - 1; i >= 0; i--){
+    const b = bullets[i].mesh;
+    for (let j = enemies.length - 1; j >= 0; j--){
+      const e = enemies[j];
+      const hitDist = bulletCount >= 10 ? 1 : 0.5;
+      if (b.position.distanceTo(e.position) < hitDist){
+        scene.remove(b); bullets.splice(i,1);
+        scene.remove(e); enemies.splice(j,1);
+        break;
+      }
+    }
+  }
+
+  /* player–enemy collision */
+  for (const e of enemies){
+    if (e.position.distanceTo(player.position) < 0.7){
+      gameOver = true; showMsg('Game Over!'); return;
+    }
+  }
+
+  /* player–gate collision */
+  gates.forEach((g, idx) => {
+    if (g.position.distanceTo(player.position) < 1.5){
+      const d = g.children[0].userData;
+      if (d.action === 'rate'){
+        if (d.mode === 'add') fireRate  = Math.max(0.2, fireRate  + d.val);
+        else                  fireRate  = Math.max(0.2, fireRate  * d.val);
+      }
+      if (d.action === 'count'){
+        let newVal = bulletCount;
+        if (d.mode === 'add') newVal += d.val;
+        else                  newVal *= d.val;
+        if (d.max) newVal = Math.min(newVal, d.max);
+        bulletCount = Math.max(1, Math.floor(newVal));
+      }
+      document.getElementById('rate').textContent  = fireRate.toFixed(1);
+      document.getElementById('count').textContent = bulletCount;
+      scene.remove(g); gates.splice(idx,1);
+    }
+  });
+
+  /* win condition */
+  if (player.position.z < -levelLength){
+    gameOver = true; showMsg('You Win!'); return;
+  }
+
+  /* camera follow */
+  camera.position.x = player.position.x;
+  camera.position.z = player.position.z + 9;
+  camera.lookAt(player.position.x, player.position.y, player.position.z - 3);
+  updateRunway();
+  
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
