@@ -44,7 +44,6 @@ canvas{display:block}
 </style>
 </head>
 <body>
-<audio id="bgm" loop><source src="song.mp3" type="audio/mpeg"/></audio>
 <div id="ui">
   Fire rate: <span id="rate">1.0</span>/sec<br>
   Bullets / shot: <span id="count">1</span>
@@ -73,49 +72,61 @@ canvas{display:block}
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
 /* ---------- preloader with progress ---------- */
-const bgmEl      = document.getElementById('bgm');
 const preEl      = document.getElementById('preloader');
 const startBtn   = document.getElementById('startBtn');
 const progressEl = document.getElementById('loadProgress');
 const textEl     = document.getElementById('loadText');
 
 let audioReady = false;
+const audioSrc = 'song.mp3';            // ваш файл
+const bgmEl    = new Audio();           // создаём динамически
+bgmEl.loop = true;
 
-// 1. байтовый прогресс
-function updateProgress(evt){
-  if (bgmEl.readyState >= 4){                 // уже можно играть
+// грузим fetch -> blob
+fetch(audioSrc)
+  .then(r => {
+    if (!r.ok) throw new Error('network');
+    const total = +r.headers.get('content-length');
+    let loaded = 0;
+    const reader = r.body.getReader();
+    const stream = new ReadableStream({
+      start(controller){
+        function pump(){
+          reader.read().then(({done, value}) => {
+            if (done){
+              controller.close();
+              return;
+            }
+            loaded += value.byteLength;
+            const pct = total ? (loaded / total * 100) : 0;
+            progressEl.value = pct;
+            textEl.textContent = `${Math.round(pct)} %`;
+            controller.enqueue(value);
+            pump();
+          });
+        }
+        pump();
+      }
+    });
+    return new Response(stream).blob();
+  })
+  .then(blob => {
+    bgmEl.src = URL.createObjectURL(blob);
+    audioReady = true;
     progressEl.value = 100;
     textEl.textContent = '100 %';
-    return;
-  }
-  const p = (evt.loaded / evt.total) * 100 || 0;
-  progressEl.value = p;
-  textEl.textContent = `${Math.round(p)} %`;
-}
-bgmEl.addEventListener('progress', updateProgress);
-bgmEl.addEventListener('loadstart', updateProgress);
-bgmEl.addEventListener('loadedmetadata', updateProgress);
-
-// 2. когда точно готово
-bgmEl.addEventListener('canplaythrough', () => {
-  audioReady = true;
-  progressEl.value = 100;
-  textEl.textContent = '100 %';
-  startBtn.disabled = false;
-  startBtn.textContent = 'Начать игру';
-}, { once: true });
-
-// 3. emergency fallback (если за 5 сек не догрузилось)
-setTimeout(() => {
-  if (!audioReady) {
+    startBtn.disabled = false;
+    startBtn.textContent = 'Начать игру';
+  })
+  .catch(() => {
+    // если файл недоступен – всё равно позволяем играть без звука
     startBtn.disabled = false;
     startBtn.textContent = 'Играть без звука';
-  }
-}, 5000);
+  });
 
 // старт
 startBtn.addEventListener('click', () => {
-  bgmEl.play().catch(() => {});
+  if (audioReady) bgmEl.play().catch(() => {});
   preEl.style.display = 'none';
   started = true;
 });
