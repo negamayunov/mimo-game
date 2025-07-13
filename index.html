@@ -81,16 +81,22 @@ const textEl     = document.getElementById('loadText');
 
 let audioReady = false;
 
-// показываем прогресс
-bgmEl.addEventListener('progress', () => {
-  if (bgmEl.buffered.length) {
-    const pct = (bgmEl.buffered.end(0) / bgmEl.duration) * 100 || 0;
-    progressEl.value = pct;
-    textEl.textContent = `${Math.round(pct)} %`;
+// 1. байтовый прогресс
+function updateProgress(evt){
+  if (bgmEl.readyState >= 4){                 // уже можно играть
+    progressEl.value = 100;
+    textEl.textContent = '100 %';
+    return;
   }
-});
+  const p = (evt.loaded / evt.total) * 100 || 0;
+  progressEl.value = p;
+  textEl.textContent = `${Math.round(p)} %`;
+}
+bgmEl.addEventListener('progress', updateProgress);
+bgmEl.addEventListener('loadstart', updateProgress);
+bgmEl.addEventListener('loadedmetadata', updateProgress);
 
-// когда трек полностью загружен
+// 2. когда точно готово
 bgmEl.addEventListener('canplaythrough', () => {
   audioReady = true;
   progressEl.value = 100;
@@ -99,7 +105,7 @@ bgmEl.addEventListener('canplaythrough', () => {
   startBtn.textContent = 'Начать игру';
 }, { once: true });
 
-// fallback: если через 5 сек всё ещё не готово, разблокируем кнопку
+// 3. emergency fallback (если за 5 сек не догрузилось)
 setTimeout(() => {
   if (!audioReady) {
     startBtn.disabled = false;
@@ -107,6 +113,7 @@ setTimeout(() => {
   }
 }, 5000);
 
+// старт
 startBtn.addEventListener('click', () => {
   bgmEl.play().catch(() => {});
   preEl.style.display = 'none';
