@@ -37,6 +37,10 @@ canvas{display:block}
   background:#00ff88; color:#000;
 }
 #startBtn:disabled{ background:#666; cursor:not-allowed; }
+
+#loadProgress{ appearance:none; }
+#loadProgress::-webkit-progress-bar{ background:#222; }
+#loadProgress::-webkit-progress-value{ background:#00ff88; }
 </style>
 </head>
 <body>
@@ -61,44 +65,52 @@ canvas{display:block}
   </div>
 
   <button id="startBtn" disabled>Загрузка…</button>
+  <progress id="loadProgress" value="0" max="100" style="width:200px;height:10px;"></progress>
+  <span id="loadText">0 %</span>
 </div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
-/* ---------- preloader ---------- */
-const bgmEl   = document.getElementById('bgm');
-const preEl   = document.getElementById('preloader');
-const startBtn = document.getElementById('startBtn');
+/* ---------- preloader with progress ---------- */
+const bgmEl      = document.getElementById('bgm');
+const preEl      = document.getElementById('preloader');
+const startBtn   = document.getElementById('startBtn');
+const progressEl = document.getElementById('loadProgress');
+const textEl     = document.getElementById('loadText');
 
 let audioReady = false;
 
-// если аудио уже в кеше / загрузилось мгновенно
+// показываем прогресс
+bgmEl.addEventListener('progress', () => {
+  if (bgmEl.buffered.length) {
+    const pct = (bgmEl.buffered.end(0) / bgmEl.duration) * 100 || 0;
+    progressEl.value = pct;
+    textEl.textContent = `${Math.round(pct)} %`;
+  }
+});
+
+// когда трек полностью загружен
 bgmEl.addEventListener('canplaythrough', () => {
   audioReady = true;
+  progressEl.value = 100;
+  textEl.textContent = '100 %';
   startBtn.disabled = false;
   startBtn.textContent = 'Начать игру';
 }, { once: true });
 
-// если аудио не успело загрузиться за 100 мс, показываем "Загрузка..."
+// fallback: если через 5 сек всё ещё не готово, разблокируем кнопку
 setTimeout(() => {
   if (!audioReady) {
-    startBtn.disabled = true;
-    startBtn.textContent = 'Загрузка…';
+    startBtn.disabled = false;
+    startBtn.textContent = 'Играть без звука';
   }
-}, 100);
+}, 5000);
 
 startBtn.addEventListener('click', () => {
-  bgmEl.play()
-    .then(() => {
-      preEl.style.display = 'none';
-      started = true;
-    })
-    .catch(() => {
-      // Если аудио заблокировано, всё равно запускаем игру
-      preEl.style.display = 'none';
-      started = true;
-    });
+  bgmEl.play().catch(() => {});
+  preEl.style.display = 'none';
+  started = true;
 });
 
 /* ---------- basic scene ---------- */
