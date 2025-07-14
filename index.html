@@ -243,7 +243,7 @@ const levelLength = SONG_LENGTH_SEC * FPS;
 
 /* ---------- infinite runway ---------- */
 const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
-const RUNWAY_LENGTH = 40;
+const RUNWAY_LENGTH = 80;
 const EDGE_HEIGHT   = 0.2;
 
 const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
@@ -292,7 +292,7 @@ function updateRunway(){
   // удаляем старые сегменты, которые уже позади камеры
   for (let i = runwaySegments.length - 1; i >= 0; i--){
     const seg = runwaySegments[i];
-    if (seg.centerZ > player.position.z + RUNWAY_LENGTH){
+    if (seg.centerZ > player.position.z + 60){
       scene.remove(seg.strip);
       scene.remove(seg.leftEdge);
       scene.remove(seg.rightEdge);
@@ -362,25 +362,27 @@ if (Math.random() < 0.7) {
 
     /* текст-Canvas */
     const canvas = document.createElement('canvas');
-    canvas.width = 512;          // шире для большой надписи
-    canvas.height = 256;
+    canvas.width  = 384;   // 3 * 128
+    canvas.height = 256;   // 2 * 128  → 3:2 пропорция
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#0008';
-    ctx.fillRect(0, 0, 512, 256);
+    ctx.fillRect(0, 0, 384, 256);
 
+    /* первая строка */
     ctx.fillStyle = '#fff';
-    ctx.font = 'bold 48px sans-serif';
+    ctx.font = 'bold 36px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(data.label.split(' ')[0], 256, 20);
+    ctx.fillText(data.label.split(' ')[0], 192, 20);
 
-    ctx.font = 'bold 72px sans-serif';
+    /* вторая строка */
+    ctx.font = 'bold 60px sans-serif';
     ctx.textBaseline = 'middle';
-    ctx.fillText(data.label.replace(/^.*?\s/, ''), 256, 128);
+    ctx.fillText(data.label.replace(/^.*?\s/, ''), 192, 128);
 
     const tex = new THREE.CanvasTexture(canvas);
     const textPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(gateWidth, 2),
+      new THREE.PlaneGeometry(gateWidth, 2),  // та же 3×2
       new THREE.MeshBasicMaterial({ map: tex, transparent: true })
     );
     textPlane.position.z = 0.03;
