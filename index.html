@@ -185,6 +185,14 @@ const playerMat = new THREE.MeshStandardMaterial({
 const nailGroup = new THREE.Group();   // на сцене только эта группа
 scene.add(nailGroup);
 
+/* ------------- перераспределение уровней ------------- */
+function redistributeLevels() {
+  const total = nailLevels.reduce((a, b) => a + b, 0);
+  const avg   = Math.ceil(total / nailCount);
+
+  nailLevels = Array(nailCount).fill(avg);
+}
+
 /* функция пересборки толпы */
 function rebuildNailFormation(){
   // удаляем старые меши
@@ -732,8 +740,14 @@ for (let i = bullets.length - 1; i >= 0; i--){
       }
       if (nailCount < MAX_NAILS){
         nailCount = Math.min(MAX_NAILS, nailCount + d.val);
-        if (d.val > 0) nailLevels.push(1);   // новый 1-уровневый
-        else nailLevels.pop();               // удаляем последний
+        if (d.val > 0){
+          nailLevels.push(1);   // новый 1-уровневый
+          redistributeLevels()
+        }
+        else{
+          nailLevels.pop(); // удаляем последний
+          redistributeLevels();
+          }               
       } else {
         // уже 5 – даём случайному гвоздю +1 уровень
         if (d.val > 0){
