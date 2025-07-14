@@ -185,6 +185,19 @@ const playerMat = new THREE.MeshStandardMaterial({
 const nailGroup = new THREE.Group();   // на сцене только эта группа
 scene.add(nailGroup);
 
+/* ---------- CROWD-LEVEL BANNER (сцена, не группа) ---------- */
+const bannerCanvas = document.createElement('canvas');
+bannerCanvas.width = 256; bannerCanvas.height = 128;
+const bannerCtx = bannerCanvas.getContext('2d');
+
+const bannerTex = new THREE.CanvasTexture(bannerCanvas);
+const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTex, transparent: true });
+const bannerGeo = new THREE.PlaneGeometry(0.8, 0.4);
+const bannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
+
+bannerMesh.position.set(0, 2.2, 0); // временная, будет обновляться в animate
+scene.add(bannerMesh);
+
 /* ------------- перераспределение уровней ------------- */
 function redistributeLevels() {
   const total = nailLevels.reduce((a, b) => a + b, 0);
@@ -211,29 +224,8 @@ function rebuildNailFormation(){
     body.rotation.z = Math.PI;
 
     const single = new THREE.Group();
-    // label – white digit above nail
     const level = nailLevels[i] || 1;
 
-    const canvas = document.createElement('canvas');
-    canvas.width = 64; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 64, 64);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(level.toString(), 32, 32);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    const label = new THREE.Mesh(
-      new THREE.PlaneGeometry(0.3, 0.3),
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true })
-    );
-    label.position.set(0, 1.1, 0);   // slightly above the nail
-    label.rotation.z = 0;    // не наклоняем
-    
-    single.add(label);
     single.add(body);
     single.add(head);
 
@@ -251,6 +243,18 @@ function rebuildNailFormation(){
 
     nailGroup.add(single);
   }
+
+  /* update banner text */
+  const totalLevel = nailLevels.reduce((a, b) => a + b, 0);
+  bannerCtx.clearRect(0, 0, 256, 128);
+  bannerCtx.fillStyle = '#000a';
+  bannerCtx.fillRect(0, 0, 256, 128);
+  bannerCtx.fillStyle = '#fff';
+  bannerCtx.textAlign = 'center';
+  bannerCtx.textBaseline = 'middle';
+  bannerCtx.font = 'bold 64px sans-serif';
+  bannerCtx.fillText(totalLevel.toString(), 128, 64);
+  bannerTex.needsUpdate = true;
 }
 
 /* ---------- shooting params ---------- */
@@ -741,7 +745,8 @@ for (let i = bullets.length - 1; i >= 0; i--){
       if (nailCount < MAX_NAILS){
         nailCount = Math.min(MAX_NAILS, nailCount + d.val);
         if (d.val > 0){
-          nailLevels.push(1);   // новый 1-уровневый
+          const maxLevel = Math.max(...nailLevels, 1);
+          nailLevels.push(maxLevel);
           redistributeLevels()
         }
         else{
@@ -788,6 +793,13 @@ for (let i = bullets.length - 1; i >= 0; i--){
   camera.lookAt(nailGroup.position.x, 0, nailGroup.position.z - 3);
   updateRunway();
   
+  /* позиционируем баннер строго над центром толпы без наклона */
+bannerMesh.position.set(
+  nailGroup.position.x,
+  nailGroup.position.y + 1.2,
+  nailGroup.position.z
+);
+bannerMesh.rotation.copy(camera.rotation); // всегда смотрит в камеру (не наклоняется)
   renderer.render(scene,camera);
 }
 animate();
