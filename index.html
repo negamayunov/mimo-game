@@ -458,30 +458,23 @@ function spawnWave(){
 
 /* ---------- gates (strict lane, same Z) ---------- */
 if (Math.random() < 0.7) {
-  // последний gate, чтобы не ставить дубликат
   const PREV_GATE = gates.length ? gates[gates.length - 1].userData : null;
-
-  // список доступных типов на этой волне
   let pool = Object.keys(gateTypes).filter(k =>
     !PREV_GATE ||
     gateTypes[k].action !== PREV_GATE.action ||
     gateTypes[k].val !== PREV_GATE.val
   );
-  if (pool.length === 0) pool = Object.keys(gateTypes); // fallback
+  if (pool.length === 0) pool = Object.keys(gateTypes);
 
-  const gateWidth = RUNWAY_WIDTH / 2;   // 3
-  const countGates = Math.random() < 0.6 ? 1 : 2; // 1 или 2
-  const spawnZGate = spawnZ + Math.random() * 10;   // общая Z для пары
+  const gateWidth = RUNWAY_WIDTH / 2;
+  const sides = Math.random() < 0.6
+    ? [Math.random() < 0.5 ? -1 : 1]   // один гейт: лево или право
+    : [-1, 1];                         // два гейта: одновременно
 
-  // выбираем уникальные типы
-  const used = new Set();
-  [-1, 1].slice(0, countGates).forEach(side => {
-    let k;
-    do {
-      k = pool[Math.floor(Math.random() * pool.length)];
-    } while (used.has(k));
-    used.add(k);
+  const spawnZGate = spawnZ + Math.random() * 10;
 
+  sides.forEach(side => {
+    let k = pool[Math.floor(Math.random() * pool.length)];
     const data = gateTypes[k];
 
     const gateGroup = new THREE.Group();
@@ -848,15 +841,15 @@ for (let i = bullets.length - 1; i >= 0; i--){
           nailLevels.pop(); // удаляем последний
           redistributeLevels();
           }               
-      } else {
+      } else if (d.val === 1) {
         // уже 5 – даём случайному гвоздю +1 уровень
-        if (d.val > 0){
-          const idx = Math.floor(Math.random() * nailCount);
-          nailLevels[idx]++;
-        } else {
-          const idx = Math.floor(Math.random() * nailCount);
-          nailLevels[idx] = Math.max(1, nailLevels[idx] - 1);
-        }
+        const idx = Math.floor(Math.random() * nailCount);
+        nailLevels[idx]++;
+      } else if (d.val === -1) {
+        // всегда удаляем один гвоздь
+        nailCount = Math.max(1, nailCount - 1);
+        nailLevels.pop();
+        redistributeLevels();
       }
 
       rebuildNailFormation();
