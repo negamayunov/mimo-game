@@ -81,7 +81,7 @@ canvas{display:block}
   Уровней: <span id="levels">1</span><br>
   Скорость: <span id="rate">1.0</span>/сек
   <!-- Пробив.: <span id="pierce">1</span><br> -->
-  Дальность: <span id="range">10</span>
+  Дальность: <span id="range">15</span>
 </div>
 
 <div id="msg">
@@ -276,7 +276,7 @@ function rebuildNailFormation(){
 /* ---------- shooting params ---------- */
 let fireRate = 1;
 let lastShot = 0;
-let fireRange = 10; // изначально маленькая дальность (можно менять)
+let fireRange = 15; // изначально маленькая дальность (можно менять)
 
 /*  NEW  */
 const MAX_NAILS   = 5;
@@ -332,8 +332,8 @@ const gateTypes = {
   /* дальность */
   rangePlus2:  {label:'ДАЛЬНОСТЬ +2', action:'range', val: 2},
   rangeMinus2: {label:'ДАЛЬНОСТЬ -2', action:'range', val: -2},
-  rangeMul2:   {label:'ДАЛЬНОСТЬ ×2', action:'range', mode:'mul', val: 2},
-  rangeDiv2:   {label:'ДАЛЬНОСТЬ ÷2', action:'range', mode:'mul', val: 0.5},
+  rangeMul2:   {label:'ДАЛЬНОСТЬ ×1.2', action:'range', mode:'mul', val: 1.2},
+  rangeDiv2:   {label:'ДАЛЬНОСТЬ /2', action:'range', mode:'mul', val: 0.5},
 
 };
 
@@ -454,7 +454,7 @@ function spawnGate(side, z, data){
       case 'range':
         topText = 'ДАЛЬНОСТЬ';
         bottomText = (data.mode === 'mul')
-          ? (data.val === 0.5 ? '÷2' : '×' + data.val)
+          ? (data.val === 0.5 ? '/2' : '×' + data.val)
           : (data.val > 0 ? '+' : '') + data.val;
         break;
 
