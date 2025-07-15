@@ -298,22 +298,40 @@ const bullets = [];
 
 /* ---------- enemies ---------- */
 /* ---------- simple heart geometry ---------- */
-function createHeartGeometry(size = 0.4){
+function createHeartGeometry(size = 0.4) {
   const shape = new THREE.Shape();
-  const s = size;
-  shape.moveTo( 0, 0);
-  shape.moveTo( s + 5, s + 5 );
-  shape.bezierCurveTo( s + 5, s + 5, s + 4, s, s, s );
-  shape.bezierCurveTo( s - 6, s, s - 6, s + 7,s - 6, s + 7 );
-  shape.bezierCurveTo( s - 6, s + 11, s - 3, s + 15.4, s + 5, s + 19 );
-  shape.bezierCurveTo( s + 12, s + 15.4, s + 16, s + 11, s + 16, s + 7 );
-  shape.bezierCurveTo( s + 16, s + 7, s + 16, s, s + 10, s );
-  shape.bezierCurveTo( s + 7, s, s + 5, s + 5, s + 5, s + 5 );
+  const x = 0, y = 0;
 
-  const extrudeSettings = { depth: 0.1, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 };
-  return new THREE.ExtrudeGeometry(shape, extrudeSettings);
+  // Старая фигура: shape.moveTo(0, 0); ...
+  // Новая фигура (из большого сердца)
+  shape.moveTo(x + 5, y + 5);
+  shape.bezierCurveTo(x + 5, y + 5, x + 4, y, x, y);
+  shape.bezierCurveTo(x - 6, y, x - 6, y + 7, x - 6, y + 7);
+  shape.bezierCurveTo(x - 6, y + 11, x - 3, y + 15.4, x + 5, y + 19);
+  shape.bezierCurveTo(x + 12, y + 15.4, x + 16, y + 11, x + 16, y + 7);
+  shape.bezierCurveTo(x + 16, y + 7, x + 16, y, x + 10, y);
+  shape.bezierCurveTo(x + 7, y, x + 5, y + 5, x + 5, y + 5);
+
+  // Стандартные настройки экструзии
+  const extrudeSettings = {
+    depth: 0.1,
+    bevelEnabled: true,
+    bevelThickness: 0.5,
+    bevelSize: 0.5
+  };
+
+  // Создаём геометрию
+  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+
+  // Центрируем геометрию, чтобы не улетала
+  geometry.center();
+
+  // Масштабируем под нужный размер (потому что сейчас оно огромное)
+  geometry.scale(size / 5, size / 5, size / 5); // подогнанное эмпирически
+
+  return geometry;
 }
-const enemyGeo = createHeartGeometry(0.01);   // 0.2 ≈ прежний размер
+const enemyGeo = createHeartGeometry(0.2);   // 0.2 ≈ прежний размер
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
 let enemies = [];
 let enemyLabels = []; // { group, mesh, initial }
@@ -558,7 +576,6 @@ function spawnWave(){
       0,
       spawnZ + (Math.random()-0.5)*8
     );
-    
     e.uuid = THREE.MathUtils.generateUUID(); // ГЕНЕРИМ ДО
     scene.add(e);
     enemies.push(e);
