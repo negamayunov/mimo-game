@@ -42,6 +42,15 @@ canvas{display:block}
 #loadProgress::-webkit-progress-bar{ background:#222; }
 #loadProgress::-webkit-progress-value{ background:#00ff88; }
 
+#progressBar{
+  position:fixed; bottom:10px; left:50%; transform:translateX(-50%);
+  width:60%; height:6px; background:#222; border-radius:3px;
+  overflow:hidden; z-index:5;
+}
+#progressFill{
+  height:100%; width:0%; background:#00ff88; transition:width 0.1s;
+}
+
 .gateLabel{
   font-family:sans-serif;
   font-size:26px;
@@ -63,6 +72,7 @@ canvas{display:block}
   top:50%;
   transform:translateY(-50%);
 }
+
 </style>
 </head>
 <body>
@@ -75,6 +85,9 @@ canvas{display:block}
 <div id="msg">
   <div id="msgText"></div>
   <button onclick="location.reload()">Restart</button>
+</div>
+<div id="progressBar">
+  <div id="progressFill"></div>
 </div>
 
 <!-- preloader + menu -->
@@ -154,6 +167,7 @@ startBtn.addEventListener('click', () => {
   if (audioReady) bgmEl.play().catch(() => {});
   preEl.style.display = 'none';
   started = true;
+  songStartTime = performance.now(); // фиксируем старт
 });
 
 /* ---------- basic scene ---------- */
@@ -270,8 +284,10 @@ let nailLevels  = [1];
 /* ---------- RUNTIME FLAGS ---------- */
 let started   = false;
 let gameOver  = false;
+let songStartTime = 0;            // момент, когда нажали «Начать»
+const SONG_DURATION = 215;        // секунды
 
-rebuildNailFormation();   // создаём первый гвоздь
+rebuildNailFormation();   // создаём первий гвоздь
 
 /* ---------- bullets ---------- */
 const bulletGeo  = new THREE.SphereGeometry(0.08,8,8);
@@ -294,7 +310,7 @@ function createHeartGeometry(size = 0.4){
 }
 const enemyGeo = createHeartGeometry(0.2);   // 0.2 ≈ прежний размер
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
-const enemies = [];
+let enemies = [];
 let enemyLabels = []; // { group, mesh, initial }
 
 /* ---------- gates ---------- */
@@ -398,9 +414,10 @@ function spawnWave(){
 
   lastSpawnZ = spawnZ;
 
-// label – store UUIDs, not objects
-  if (crowdSize > 5) {
-    const canvas = document.createElement('canvas');
+// label – collect UUIDs while spawning this concrete batch
+    let freshIds = [];
+    if (crowdSize > 5) {
+      const canvas = document.createElement('canvas');
     canvas.width = 128; canvas.height = 64;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#000a';
@@ -420,8 +437,7 @@ function spawnWave(){
     scene.add(labelMesh);
 
     // сохраняем UUID-список
-    const ids = enemies.slice(-crowdSize).map(e => e.uuid);
-    enemyLabels.push({ ids, mesh: labelMesh, initial: crowdSize });
+    enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
   }
 
   /* 3. спавним кучно */
@@ -432,9 +448,12 @@ function spawnWave(){
       0,
       spawnZ + (Math.random()-0.5)*8
     );
-    scene.add(e); enemies.push(e);
-    e.position.y = 0.3;          // приподнять над дорожкой
-    e.lookAt(nailGroup.position.x, 0.3, nailGroup.position.z); // «смотрит» на игрока
+    e.uuid = THREE.MathUtils.generateUUID(); // ГЕНЕРИМ ДО
+    scene.add(e);
+    enemies.push(e);
+    if (crowdSize > 5) freshIds.push(e.uuid);   // ← собираем ID только этой волны
+    e.position.y = 0.3;
+    e.lookAt(nailGroup.position.x, 0.3, nailGroup.position.z);
   }
 
 /* ---------- gates (strict lane, same Z) ---------- */
@@ -634,6 +653,8 @@ function updateEnemiesAI(){
 function animate(time){
   requestAnimationFrame(animate);
   if (!started || gameOver) return;
+  // очистить старых врагов без uuid (защита от старых сохранений/кэша)
+  enemies = enemies.filter(e => e.uuid);
 
   /*  ✔  ИСПРАВЛЕНИЕ 1: всегда вызываем shoot  */
   shoot(time);
@@ -674,8 +695,12 @@ function animate(time){
 for (let k = enemyLabels.length - 1; k >= 0; k--) {
   const { ids, mesh, initial } = enemyLabels[k];
 
-  // живые сердца по UUID
-  const alive = enemies.filter(e => ids.includes(e.uuid));
+  // ищем только среди текущих врагов и только по сохранённым UUID
+  const alive = [];
+  for (const e of enemies) {
+    if (ids.includes(e.uuid)) alive.push(e);
+  }
+
   if (alive.length === 0) {
     scene.remove(mesh);
     enemyLabels.splice(k, 1);
@@ -687,6 +712,11 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
   center.divideScalar(alive.length);
   center.y += 1.2;
   mesh.position.lerp(center, 0.1);
+
+  console.log(
+  `label #${k} ids.length=${ids.length} alive=${alive.length}`,
+  alive.map(e => e.uuid.slice(-4))
+);
 
   if (alive.length !== initial) {
     const canvas = mesh.material.map.image;
@@ -847,9 +877,15 @@ for (let i = bullets.length - 1; i >= 0; i--){
     scene.remove(g); gates.splice(idx,1);
   });
 
-  /* win condition */
-  if (nailGroup.position.z < -levelLength){
-    gameOver = true; showMsg('You Win!'); return;
+  /* win condition по реальному времени */
+  const elapsedSec = (performance.now() - songStartTime) / 1000;
+  const progress = Math.min(1, elapsedSec / SONG_DURATION);
+  document.getElementById('progressFill').style.width = (progress * 100) + '%';
+
+  if (elapsedSec >= SONG_DURATION){
+    gameOver = true;
+    showMsg('You Win!');
+    return;
   }
 
   /* camera follow */
