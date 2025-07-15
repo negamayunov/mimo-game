@@ -327,7 +327,8 @@ function createHeartGeometry(size = 0.4) {
   geometry.center();
 
   // Масштабируем под нужный размер (потому что сейчас оно огромное)
-  geometry.scale(size / 5, size / 5, size / 5); // подогнанное эмпирически
+  geometry.scale(size / 4, size / 4, size / 4); // подогнанное эмпирически
+  geometry.rotateZ(Math.PI)
 
   return geometry;
 }
