@@ -80,8 +80,10 @@ canvas{display:block}
   Гвоздей: <span id="count">1</span> |
   Уровней: <span id="levels">1</span><br>
   Скорость: <span id="rate">1.0</span>/сек
-  Пробив.: <span id="pierce">1</span>
+  <!-- Пробив.: <span id="pierce">1</span><br> -->
+  Дальность: <span id="range">10</span>
 </div>
+
 <div id="msg">
   <div id="msgText"></div>
   <button onclick="location.reload()">Restart</button>
@@ -113,7 +115,6 @@ const preEl      = document.getElementById('preloader');
 const startBtn   = document.getElementById('startBtn');
 const progressEl = document.getElementById('loadProgress');
 const textEl     = document.getElementById('loadText');
-
 
 let audioReady = false;
 const audioSrc = 'song.mp3';            // ваш файл
@@ -275,6 +276,7 @@ function rebuildNailFormation(){
 /* ---------- shooting params ---------- */
 let fireRate = 1;
 let lastShot = 0;
+let fireRange = 10; // изначально маленькая дальность (можно менять)
 
 /*  NEW  */
 const MAX_NAILS   = 5;
@@ -326,7 +328,13 @@ const gateTypes = {
   countMinus1:{label:'-1 ГВОЗДЬ',    action:'count', val: -1},
   /* уровень */
   levelPlus: {label:'+1 УРОВЕНЬ',    action:'level', val:  1},
-  levelMinus:{label:'-1 УРОВЕНЬ',    action:'level', val: -1}
+  levelMinus:{label:'-1 УРОВЕНЬ',    action:'level', val: -1},
+  /* дальность */
+  rangePlus2:  {label:'ДАЛЬНОСТЬ +2', action:'range', val: 2},
+  rangeMinus2: {label:'ДАЛЬНОСТЬ -2', action:'range', val: -2},
+  rangeMul2:   {label:'ДАЛЬНОСТЬ ×2', action:'range', mode:'mul', val: 2},
+  rangeDiv2:   {label:'ДАЛЬНОСТЬ ÷2', action:'range', mode:'mul', val: 0.5},
+
 };
 
 /* ---------- dynamic spawning ---------- */
@@ -339,6 +347,7 @@ const levelLength = SONG_LENGTH_SEC * FPS;
 const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
 const RUNWAY_LENGTH = 80;
 const EDGE_HEIGHT   = 0.2;
+const gateWidth = RUNWAY_WIDTH / 2;
 
 const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
 const edgeMat   = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
@@ -394,6 +403,104 @@ function updateRunway(){
     }
   }
 }
+
+function spawnGate(side, z, data){
+  const gateGroup = new THREE.Group();
+  gateGroup.userData = data;
+
+  const isPositive =
+  (data.mode === 'mul')
+    ? data.val > 1
+    : data.val > 0;
+
+    /* полупрозрачная панель новой ширины */
+    const panelMat = new THREE.MeshStandardMaterial({
+      color      : isPositive ? 0x00ff00 : 0xff0000,
+      transparent: true,
+      opacity    : 0.3
+    });
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(gateWidth, 2), panelMat);
+    panel.position.z = 0.01;
+    gateGroup.add(panel);
+
+    /* белая рамка */
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(gateWidth, 2)),
+      new THREE.LineBasicMaterial({ color: 0xffffff })
+    );
+    edges.position.z = 0.02;
+    gateGroup.add(edges);
+
+  /* ---------- текст-Canvas ---------- */
+    const canvas = document.createElement('canvas');
+    canvas.width  = 384;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+
+    let topText = '', bottomText = '';
+    switch (data.action) {
+      case 'rate':
+        topText = 'СКОРОСТЬ';
+        bottomText = (data.val > 0 ? '+' : '') + data.val;
+        break;
+      case 'count':
+        topText = 'ГВОЗДИ';
+        bottomText = (data.val > 0 ? '+' : '') + data.val;
+        break;
+      case 'level':
+        topText = 'УРОВЕНЬ';
+        bottomText = (data.val > 0 ? '+' : '') + data.val;
+        break;
+      case 'range':
+        topText = 'ДАЛЬНОСТЬ';
+        bottomText = (data.mode === 'mul')
+          ? (data.val === 0.5 ? '÷2' : '×' + data.val)
+          : (data.val > 0 ? '+' : '') + data.val;
+        break;
+
+    }
+
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, 384, 256);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+
+    ctx.font = 'bold 42px sans-serif';
+    ctx.textBaseline = 'top';
+    ctx.fillText(topText, 192, 25);
+
+    ctx.font = 'bold 72px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(bottomText, 192, 140);
+
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const textPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(gateWidth, 2),  // та же 3×2
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+    );
+    textPlane.position.z = 0.03;
+    gateGroup.add(textPlane);
+
+    /* свечение */
+
+    const color = isPositive ? 0x00ff00 : 0xff0000;
+    const light = new THREE.PointLight(color, 1.2, 6);
+    light.position.set(0, 0.5, 0);
+    gateGroup.add(light);
+
+    const glowMat = new THREE.MeshBasicMaterial({
+      color, transparent: true, opacity: 0.25, side: THREE.DoubleSide
+    });
+    const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(gateWidth + 0.2, 2.2), glowMat);
+    glowPlane.position.z = -0.05;
+    gateGroup.add(glowPlane);
+
+    /* позиция: ровно по краю полосы */
+    gateGroup.position.set(side * (RUNWAY_WIDTH / 4), 0, z);
+    scene.add(gateGroup);
+    gates.push(gateGroup);
+  };
 
 function spawnWave(){
   /* 1. мощность и кол-во */
@@ -466,105 +573,22 @@ if (Math.random() < 0.7) {
   );
   if (pool.length === 0) pool = Object.keys(gateTypes);
 
-  const gateWidth = RUNWAY_WIDTH / 2;
+  // const gateWidth = RUNWAY_WIDTH / 2;
   const sides = Math.random() < 0.6
     ? [Math.random() < 0.5 ? -1 : 1]   // один гейт: лево или право
     : [-1, 1];                         // два гейта: одновременно
 
   const spawnZGate = spawnZ + Math.random() * 10;
 
-  sides.forEach(side => {
-    let k = pool[Math.floor(Math.random() * pool.length)];
-    const data = gateTypes[k];
+  if (sides.length === 1) {
+  const k = pool[Math.floor(Math.random() * pool.length)];
+  spawnGate(sides[0], spawnZGate, gateTypes[k]);
+} else {
+  const shuffled = pool.sort(() => 0.5 - Math.random());
+  spawnGate(sides[0], spawnZGate, gateTypes[shuffled[0]]);
+  spawnGate(sides[1], spawnZGate, gateTypes[shuffled[1]]);
+}
 
-    const gateGroup = new THREE.Group();
-    gateGroup.userData = data;
-
-    const isPositive =
-      data.val > 0 ||
-      (data.mode === 'mul' && data.val > 1);
-
-    /* полупрозрачная панель новой ширины */
-    const panelMat = new THREE.MeshStandardMaterial({
-      color      : isPositive ? 0x00ff00 : 0xff0000,
-      transparent: true,
-      opacity    : 0.3
-    });
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(gateWidth, 2), panelMat);
-    panel.position.z = 0.01;
-    gateGroup.add(panel);
-
-    /* белая рамка */
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.PlaneGeometry(gateWidth, 2)),
-      new THREE.LineBasicMaterial({ color: 0xffffff })
-    );
-    edges.position.z = 0.02;
-    gateGroup.add(edges);
-
-  /* ---------- текст-Canvas ---------- */
-    const canvas = document.createElement('canvas');
-    canvas.width  = 384;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    let topText = '', bottomText = '';
-    switch (data.action) {
-      case 'rate':
-        topText = 'СКОРОСТЬ';
-        bottomText = (data.val > 0 ? '+' : '') + data.val;
-        break;
-      case 'count':
-        topText = 'ГВОЗДИ';
-        bottomText = (data.val > 0 ? '+' : '') + data.val;
-        break;
-      case 'level':
-        topText = 'УРОВЕНЬ';
-        bottomText = (data.val > 0 ? '+' : '') + data.val;
-        break;
-    }
-
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 384, 256);
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-
-    ctx.font = 'bold 42px sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText(topText, 192, 25);
-
-    ctx.font = 'bold 72px sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(bottomText, 192, 140);
-
-
-    const tex = new THREE.CanvasTexture(canvas);
-    const textPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(gateWidth, 2),  // та же 3×2
-      new THREE.MeshBasicMaterial({ map: tex, transparent: true })
-    );
-    textPlane.position.z = 0.03;
-    gateGroup.add(textPlane);
-
-    /* свечение */
-
-    const color = isPositive ? 0x00ff00 : 0xff0000;
-    const light = new THREE.PointLight(color, 1.2, 6);
-    light.position.set(0, 0.5, 0);
-    gateGroup.add(light);
-
-    const glowMat = new THREE.MeshBasicMaterial({
-      color, transparent: true, opacity: 0.25, side: THREE.DoubleSide
-    });
-    const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(gateWidth + 0.2, 2.2), glowMat);
-    glowPlane.position.z = -0.05;
-    gateGroup.add(glowPlane);
-
-    /* позиция: ровно по краю полосы */
-    gateGroup.position.set(side * (RUNWAY_WIDTH / 4), 0, spawnZGate);
-    scene.add(gateGroup);
-    gates.push(gateGroup);
-  });
 }
 }
 
@@ -592,7 +616,7 @@ function shoot(time){
   if (time - lastShot < 1000 / fireRate) return;
   lastShot = time;
 
-  for (let i = 0; i < nailCount; i++){
+  nailGroup.children.forEach((nail, i) => {
     const level = nailLevels[i];
     const geo = level >= 3 ? bigBulletGeo : bulletGeo;
     const mat = new THREE.MeshStandardMaterial({
@@ -600,7 +624,7 @@ function shoot(time){
     });
 
     const b = new THREE.Mesh(geo, mat);
-    const nailPos = nailGroup.children[i].position; // место конкретного гвоздя
+    const nailPos = nail.position;
     b.position.set(
       nailGroup.position.x + nailPos.x,
       0,
@@ -610,9 +634,9 @@ function shoot(time){
 
     // пуля знает свой уровень-пробой
     bullets.push({mesh:b, vx:0, vz:-0.4, pierce:level});
-    document.getElementById('pierce').textContent = nailLevels.reduce((a,b)=>a+b,0);
-  }
+  });
 }
+
 
 /* ---------- game-over screen ---------- */
 function showMsg(text){
@@ -706,10 +730,10 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
   center.y += 1.2;
   mesh.position.lerp(center, 0.1);
 
-  console.log(
-  `label #${k} ids.length=${ids.length} alive=${alive.length}`,
-  alive.map(e => e.uuid.slice(-4))
-);
+  // console.log(
+  // `label #${k} ids.length=${ids.length} alive=${alive.length}`,
+  // alive.map(e => e.uuid.slice(-4))
+// );
 
   if (alive.length !== initial) {
     const canvas = mesh.material.map.image;
@@ -737,7 +761,7 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
     const b = bullets[i];
     b.mesh.position.x += b.vx;
     b.mesh.position.z += b.vz;
-    if (b.mesh.position.length() > levelLength + 50){
+    if (b.mesh.position.z < nailGroup.position.z - fireRange){
       scene.remove(b.mesh); bullets.splice(i,1);
     }
   }
@@ -823,6 +847,16 @@ for (let i = bullets.length - 1; i >= 0; i--){
       fireRate = Math.max(0.2, fireRate + d.val);
     }
 
+    if (d.action === 'range'){
+      if (d.mode === 'mul'){
+        fireRange *= d.val;
+      } else {
+        fireRange = Math.max(1, fireRange + d.val); // ограничение снизу
+      }
+      rebuildNailFormation();
+    }
+
+
     if (d.action === 'count'){
       // если отрицательный gate «-1 гвоздь» и остался всего один
       if (d.val === -1 && nailCount === 1){
@@ -866,6 +900,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
     document.getElementById('count').textContent  = nailCount;
     document.getElementById('levels').textContent = nailLevels.reduce((a,b)=>a+b,0);
     document.getElementById('rate').textContent   = fireRate.toFixed(1);
+    document.getElementById('range').textContent = fireRange.toFixed(1);
 
     scene.remove(g); gates.splice(idx,1);
   });
