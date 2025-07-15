@@ -101,6 +101,7 @@ const startBtn   = document.getElementById('startBtn');
 const progressEl = document.getElementById('loadProgress');
 const textEl     = document.getElementById('loadText');
 
+
 let audioReady = false;
 const audioSrc = 'song.mp3';            // ваш файл
 const bgmEl    = new Audio();           // создаём динамически
@@ -294,6 +295,7 @@ function createHeartGeometry(size = 0.4){
 const enemyGeo = createHeartGeometry(0.2);   // 0.2 ≈ прежний размер
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
 const enemies = [];
+let enemyLabels = []; // { group, mesh, initial }
 
 /* ---------- gates ---------- */
 const gateGeo = new THREE.BoxGeometry(2,2,0.2);
@@ -390,8 +392,37 @@ function spawnWave(){
   const clusterX = side * (1 + Math.random() * 2);
   const clampedClusterX = THREE.MathUtils.clamp(clusterX, -2.5, 2.5); // не выходит за бортики
   const spawnZ   = lastSpawnZ - 20;
+  /* ————————  ОДНА СТРОКА  ———————— */
+  if (spawnZ > nailGroup.position.z + 20) return; // не создаём, если за спиной
+  
 
   lastSpawnZ = spawnZ;
+
+// label – store UUIDs, not objects
+  if (crowdSize > 5) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(crowdSize.toString(), 64, 32);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+    const labelGeo = new THREE.PlaneGeometry(1, 0.5);
+    const labelMesh = new THREE.Mesh(labelGeo, labelMat); // Properly define mesh
+    labelMesh.position.set(0, 1.2, spawnZ); // Set Z position relative to spawnZ
+
+    scene.add(labelMesh);
+
+    // сохраняем UUID-список
+    const ids = enemies.slice(-crowdSize).map(e => e.uuid);
+    enemyLabels.push({ ids, mesh: labelMesh, initial: crowdSize });
+  }
 
   /* 3. спавним кучно */
   for (let i = 0; i < crowdSize; i++){
@@ -639,6 +670,40 @@ function animate(time){
 
   updateEnemiesAI();
 
+/* ---------- центральный label над группой ---------- */
+for (let k = enemyLabels.length - 1; k >= 0; k--) {
+  const { ids, mesh, initial } = enemyLabels[k];
+
+  // живые сердца по UUID
+  const alive = enemies.filter(e => ids.includes(e.uuid));
+  if (alive.length === 0) {
+    scene.remove(mesh);
+    enemyLabels.splice(k, 1);
+    continue;
+  }
+
+  const center = new THREE.Vector3();
+  alive.forEach(e => center.add(e.position));
+  center.divideScalar(alive.length);
+  center.y += 1.2;
+  mesh.position.lerp(center, 0.1);
+
+  if (alive.length !== initial) {
+    const canvas = mesh.material.map.image;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, 128, 64);
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, 128, 64);
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 48px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(alive.length.toString(), 64, 32);
+    mesh.material.map.needsUpdate = true;
+    enemyLabels[k].initial = alive.length;
+  }
+}
+
   /* continuous spawning */
   if (nailGroup.position.z - 80 < lastSpawnZ){
     spawnWave();
@@ -791,6 +856,21 @@ for (let i = bullets.length - 1; i >= 0; i--){
   camera.position.x = nailGroup.position.x;
   camera.position.z = nailGroup.position.z + 9;
   camera.lookAt(nailGroup.position.x, 0, nailGroup.position.z - 3);
+
+  /* удаляем врагов и гейты за спиной */
+  const behind = nailGroup.position.z + 10;  // порог удаления
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (enemies[i].position.z > behind) {
+      scene.remove(enemies[i]);
+      enemies.splice(i, 1);
+    }
+  }
+  for (let i = gates.length - 1; i >= 0; i--) {
+    if (gates[i].position.z > behind) {
+      scene.remove(gates[i]);
+      gates.splice(i, 1);
+    }
+  }
   updateRunway();
   
   /* позиционируем баннер строго над центром толпы без наклона */
