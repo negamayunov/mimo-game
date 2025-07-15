@@ -508,7 +508,7 @@ function spawnWave(){
   const bulletCount = nailLevels.reduce((a, b) => a + b, 0);
 
   const power = Math.min(1, (fireRate - 0.5)/4 + (bulletCount - 1)/10);
-  const crowdSize = 1 + Math.floor(power * power * 100 * difficultyFactor);
+  const crowdSize = 3 + Math.floor(power * power * 100 * difficultyFactor);
 
   /* 2. выбираем сторону кластера */
   const side     = Math.random() < 0.5 ? -1 : 1; // -1 = лево, +1 = право
