@@ -294,45 +294,31 @@ rebuildNailFormation();   // создаём первий гвоздь
 /* ---------- bullets ---------- */
 const bulletGeo  = new THREE.SphereGeometry(0.08,8,8);
 const bigBulletGeo = new THREE.SphereGeometry(0.25,16,16);
+// ⚡ 2. Shared bullet materials
+const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+const bigBulletMat = new THREE.MeshStandardMaterial({ color: 0xff8800 });
+
 const bullets = [];
 
 /* ---------- enemies ---------- */
-/* ---------- simple heart geometry ---------- */
-function createHeartGeometry(size = 0.4) {
-  const shape = new THREE.Shape();
-  const x = 0, y = 0;
+/* ---------- shared heart geometry ---------- */
+const _heartShape = new THREE.Shape();
+((s = _heartShape) => {
+  s.moveTo(5, 5);
+  s.bezierCurveTo(5, 5, 4, 0, 0, 0);
+  s.bezierCurveTo(-6, 0, -6, 7, -6, 7);
+  s.bezierCurveTo(-6, 11, -3, 15.4, 5, 19);
+  s.bezierCurveTo(12, 15.4, 16, 11, 16, 7);
+  s.bezierCurveTo(16, 7, 16, 0, 10, 0);
+  s.bezierCurveTo(7, 0, 5, 5, 5, 5);
+})();
 
-  // Старая фигура: shape.moveTo(0, 0); ...
-  // Новая фигура (из большого сердца)
-  shape.moveTo(x + 5, y + 5);
-  shape.bezierCurveTo(x + 5, y + 5, x + 4, y, x, y);
-  shape.bezierCurveTo(x - 6, y, x - 6, y + 7, x - 6, y + 7);
-  shape.bezierCurveTo(x - 6, y + 11, x - 3, y + 15.4, x + 5, y + 19);
-  shape.bezierCurveTo(x + 12, y + 15.4, x + 16, y + 11, x + 16, y + 7);
-  shape.bezierCurveTo(x + 16, y + 7, x + 16, y, x + 10, y);
-  shape.bezierCurveTo(x + 7, y, x + 5, y + 5, x + 5, y + 5);
+const heartGeo = new THREE.ExtrudeGeometry(_heartShape, 8);
+heartGeo.center();
+heartGeo.scale(0.05, 0.05, 0.05); // 0.4 / 4 = 0.1, но ещё ×0.5 чтобы ≈0.2 размер
+heartGeo.rotateZ(Math.PI);
 
-  // Стандартные настройки экструзии
-  const extrudeSettings = {
-    depth: 0.1,
-    bevelEnabled: true,
-    bevelThickness: 0.5,
-    bevelSize: 0.5
-  };
-
-  // Создаём геометрию
-  const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-
-  // Центрируем геометрию, чтобы не улетала
-  geometry.center();
-
-  // Масштабируем под нужный размер (потому что сейчас оно огромное)
-  geometry.scale(size / 4, size / 4, size / 4); // подогнанное эмпирически
-  geometry.rotateZ(Math.PI)
-
-  return geometry;
-}
-const enemyGeo = createHeartGeometry(0.2);   // 0.2 ≈ прежний размер
+const enemyGeo = heartGeo;   // shared
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
 let enemies = [];
 let enemyLabels = []; // { group, mesh, initial }
@@ -627,7 +613,7 @@ window.addEventListener('touchmove', e => {
 }, { passive: true });
 
 /* ---------- camera ---------- */
-camera.position.set(0,5,6);                       // <-- ближе
+camera.position.set(0,5,4);                       // <-- ближе
 camera.lookAt(0,-1,nailGroup.position.z - 3);        // <-- ниже и точнее
 
 let speed = 0.1;
@@ -644,9 +630,7 @@ function shoot(time){
   nailGroup.children.forEach((nail, i) => {
     const level = nailLevels[i];
     const geo = level >= 3 ? bigBulletGeo : bulletGeo;
-    const mat = new THREE.MeshStandardMaterial({
-      color: level >= 3 ? 0xff8800 : 0xffff00
-    });
+    const mat = level >= 3 ? bigBulletMat : bulletMat;
 
     const b = new THREE.Mesh(geo, mat);
     const nailPos = nail.position;
@@ -748,6 +732,8 @@ function animate(time){
   });
 
   updateEnemiesAI();
+  // ⚡ 4. Clean stale labels
+  enemyLabels = enemyLabels.filter(l => enemies.some(e => l.ids.includes(e.uuid)));
 
 /* ---------- центральный label над группой ---------- */
 for (let k = enemyLabels.length - 1; k >= 0; k--) {
