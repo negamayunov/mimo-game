@@ -84,7 +84,7 @@ canvas{display:block}
   Дальность: <span id="range">15</span>
 </div>
 
-<div id="best-stats" style="position:absolute; top:10px; right:10px; font-size:18px;">
+<!-- <div id="best-stats" style="position:absolute; top:10px; right:10px; font-size:18px;">
   Лучшие параметры:<br>
   Гвоздей: <span id="best-count">1</span><br>
   Уровней: <span id="best-levels">1</span><br>
@@ -92,7 +92,7 @@ canvas{display:block}
   Дальность: <span id="best-range">15</span><br>
   Текущий урон: <span id="cur-dmg">0</span><br>
   Лучший урон: <span id="best-dmg">0</span>
-</div>
+</div> -->
 
 <div id="msg">
   <div id="msgText"></div>
@@ -336,7 +336,7 @@ function calcWallHP() {
   /* 2. Сколько залпов успеет выпустить игрок, пока цель в досягаемости
        = дальность / скорость пули  (пули летят 0.4 ед/кадр @ 60 fps ≈ 24 ед/сек) */
   const bulletSpeed = 24;                // единиц в секунду
-  const timeInRange = fireRange / bulletSpeed;
+  const timeInRange = fireRange / 1;
 
   /* 3. Сколько залпов за это время */
   const shotsFired  = Math.max(1, fireRate * timeInRange);
@@ -346,7 +346,7 @@ function calcWallHP() {
 
   /* 5. Средний урон (текущий + лучший) */
   const bestTotal = bestNailLevelSum;
-  const bestShots = Math.max(1, bestFireRate * (bestFireRange / bulletSpeed));
+  const bestShots = Math.max(1, bestFireRate * (bestFireRange));
   const bestDmg   = bestTotal * bestShots;
 
   let baseDmg = (fullDmg + bestDmg) / 2;
@@ -362,7 +362,9 @@ function calcWallHP() {
   // обновляем UI урон
   document.getElementById('cur-dmg').textContent  = Math.round(fullDmg);
   document.getElementById('best-dmg').textContent = Math.round(bestDmg);
-  return Math.max(1, Math.round(hp) + 4);
+  hp = Math.max(1, Math.round(hp) + 4);
+
+  return { hp, rand2 }; 
 }
 
 /* ---------- RUNTIME FLAGS ---------- */
@@ -691,8 +693,15 @@ function spawnGate(side, z, data){
     wall.position.set(pos, 0, z);
 
     // HP
-    wall.userData.hp = calcWallHP();
-    wall.userData.maxHp = wall.userData.hp;
+    const wallData = calcWallHP();
+    wall.userData.hp = wallData.hp;
+    wall.userData.rand2 = wallData.rand2;
+
+    // --- временная окраска непробиваемых ---
+    if (wallData.rand2 > 1) {
+      wall.material.color.set(0xff0000);
+      wall.material.emissive.set(0x770000);
+    }
 
     // собственная канва
     const canvas = document.createElement('canvas');
@@ -745,10 +754,10 @@ function applyToBest(gate) {
   }
 
   /* UI-обновление */
-  document.getElementById('best-count').textContent  = bestNailCount;
-  document.getElementById('best-levels').textContent = bestNailLevelSum;
-  document.getElementById('best-rate').textContent   = bestFireRate.toFixed(1);
-  document.getElementById('best-range').textContent  = bestFireRange;
+  // document.getElementById('best-count').textContent  = bestNailCount;
+  // document.getElementById('best-levels').textContent = bestNailLevelSum;
+  // document.getElementById('best-rate').textContent   = bestFireRate.toFixed(1);
+  // document.getElementById('best-range').textContent  = bestFireRange;
 }
 
   function canPlaceAt(z) {
