@@ -329,14 +329,14 @@ function utility(gate, current, twin) {
   return prio[gate.action] || 0;
 }
 
-function calcWallHP() {
+function calcWallHP(delta) {
   /* 1. Суммарный урон за ОДИН залп */
   const totalPierce = nailLevels.reduce((a, b) => a + b, 0);
 
   /* 2. Сколько залпов успеет выпустить игрок, пока цель в досягаемости
        = дальность / скорость пули  (пули летят 0.4 ед/кадр @ 60 fps ≈ 24 ед/сек) */
-  const bulletSpeed = 24;                // единиц в секунду
-  const timeInRange = fireRange / 1;
+  const bulletSpeed = 0.4 / delta;          // единиц в секунду
+  const timeInRange = fireRange / bulletSpeed;
 
   /* 3. Сколько залпов за это время */
   const shotsFired  = Math.max(1, fireRate * timeInRange);
@@ -346,7 +346,7 @@ function calcWallHP() {
 
   /* 5. Средний урон (текущий + лучший) */
   const bestTotal = bestNailLevelSum;
-  const bestShots = Math.max(1, bestFireRate * (bestFireRange));
+  const bestShots = Math.max(1, bestFireRate * (bestFireRange / bulletSpeed));
   const bestDmg   = bestTotal * bestShots;
 
   let baseDmg = (fullDmg + bestDmg) / 2;
@@ -360,8 +360,8 @@ function calcWallHP() {
   hp *= rand2;
 
   // обновляем UI урон
-  document.getElementById('cur-dmg').textContent  = Math.round(fullDmg);
-  document.getElementById('best-dmg').textContent = Math.round(bestDmg);
+  // document.getElementById('cur-dmg').textContent  = Math.round(fullDmg);
+  // document.getElementById('best-dmg').textContent = Math.round(bestDmg);
   hp = Math.max(1, Math.round(hp) + 4);
 
   return { hp, rand2 }; 
@@ -688,12 +688,12 @@ function spawnGate(side, z, data){
     gates.push(gateGroup);
   }
 
-  function createWall(pos, z) {
+  function createWall(pos, z, delta) {
     const wall = new THREE.Mesh(wallGeo, wallMat.clone());
     wall.position.set(pos, 0, z);
 
     // HP
-    const wallData = calcWallHP();
+    const wallData = calcWallHP(delta);
     wall.userData.hp = wallData.hp;
     wall.userData.rand2 = wallData.rand2;
 
@@ -765,7 +765,7 @@ function applyToBest(gate) {
   }
 
 
-function spawnWave(){
+function spawnWave(delta){
   /* 1. мощность и кол-во */
   // общее количество "пуль за выстрел" = сумма уровней всех гвоздей
   const bulletCount = nailLevels.reduce((a, b) => a + b, 0);
@@ -820,13 +820,30 @@ function spawnWave(){
       do { pos = wallPositions[Math.floor(Math.random() * 3)]; }
       while (taken.has(pos));
       taken.add(pos);
-      createWall(pos, spawnZ);
+      createWall(pos, spawnZ, delta);
     }
     lastObjectZ = spawnZ;
   }
 
+  /* --- исключаем спавн внутри стенок --- */
+  const wallBoxes = walls.map(w => ({
+    x: w.position.x,
+    z: w.position.z,
+    halfW: RUNWAY_WIDTH / 6 + 0.5,
+    halfH: 1.2
+  }));
+
   /* 3. спавним кучно */
   for (let i = 0; i < crowdSize; i++){
+    let eX, eZ;
+    let tooClose;
+    do {
+      eX = clampedClusterX + (Math.random() - 0.5) * 1.5;
+      eZ = spawnZ + (Math.random() - 0.5) * 8;
+      tooClose = wallBoxes.some(w =>
+        Math.abs(eX - w.x) < w.halfW * 3 && Math.abs(eZ - w.z) < w.halfH * 3
+      );
+    } while (tooClose);
     const e = new THREE.Mesh(enemyGeo, enemyMat);
     e.position.set(
       clampedClusterX + (Math.random()-0.5)*1.5,
@@ -1024,9 +1041,12 @@ function fadeOutGate(gate) {
 }
 
 /* ---------- main loop ---------- */
+let lastTime = performance.now();
 function animate(time){
   requestAnimationFrame(animate);
   if (!started || gameOver) return;
+  const delta = (time - lastTime) / 1000;   // секунды
+  lastTime = time;
   // очистить старых врагов без uuid (защита от старых сохранений/кэша)
   enemies = enemies.filter(e => e.uuid);
 
@@ -1111,7 +1131,7 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
 
   /* continuous spawning */
   if (nailGroup.position.z - 80 < lastSpawnZ){
-    spawnWave();
+    spawnWave(delta);
   }
 
   /* bullets */
