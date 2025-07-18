@@ -429,6 +429,64 @@ const wallMat = new THREE.MeshPhysicalMaterial({
   transmission: 0.7
 });
 const walls = [];
+/* ---------- RUNWAY POOL (без new Mesh каждый кадр) ---------- */
+const RUNWAY_POOL_SIZE = 6;               // 6 сегментов достаточно
+const runwayPool = [];                    // {mesh, inUse, centerZ}
+const runwayMat  = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+const edgeMat    = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+
+// создаём сразу все меши один раз
+for (let i = 0; i < RUNWAY_POOL_SIZE; i++) {
+  const strip   = new THREE.Mesh(new THREE.PlaneGeometry(RUNWAY_WIDTH, RUNWAY_LENGTH), runwayMat);
+  strip.rotation.x = -Math.PI / 2;
+
+  const leftEdge  = new THREE.Mesh(new THREE.BoxGeometry(0.1, EDGE_HEIGHT, RUNWAY_LENGTH), edgeMat);
+  const rightEdge = new THREE.Mesh(new THREE.BoxGeometry(0.1, EDGE_HEIGHT, RUNWAY_LENGTH), edgeMat);
+
+  // спрятать за кадром
+  strip.position.set(0, -0.5, 9999);
+  leftEdge.position.set(-RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, 9999);
+  rightEdge.position.set( RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, 9999);
+
+  scene.add(strip, leftEdge, rightEdge);
+
+  runwayPool.push({
+    strip, leftEdge, rightEdge,
+    inUse: false,
+    centerZ: 0
+  });
+}
+
+/* ---------- обновление дорожки без new Mesh ---------- */
+function updateRunway() {
+  // ставим новые сегменты впереди
+  const ahead = nailGroup.position.z - 2 * RUNWAY_LENGTH;
+  let lastZ = -Infinity;
+  runwayPool.filter(r => r.inUse).forEach(r => lastZ = Math.max(lastZ, r.centerZ));
+
+  if (!isFinite(lastZ) || lastZ > ahead) {
+    const free = runwayPool.find(r => !r.inUse);
+    if (free) {
+      const z = isFinite(lastZ) ? lastZ - RUNWAY_LENGTH : 0;
+      free.strip.position.z   = z;
+      free.leftEdge.position.z = z;
+      free.rightEdge.position.z = z;
+      free.centerZ = z;
+      free.inUse = true;
+    }
+  }
+
+  // прячем старые
+  runwayPool.forEach(r => {
+    if (r.inUse && r.centerZ > nailGroup.position.z + 60) {
+      r.inUse = false;
+      // прячем за кадром, чтобы не мешали
+      r.strip.position.z = 9999;
+      r.leftEdge.position.z = 9999;
+      r.rightEdge.position.z = 9999;
+    }
+  });
+}
 
 const enemyGeo = heartGeo;   // shared
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
@@ -491,63 +549,6 @@ const MIN_GAP = 3;            // минимальное расстояние м�
 const SONG_LENGTH_SEC = 215;
 const FPS = 60;
 const levelLength = SONG_LENGTH_SEC * FPS;
-
-/* ---------- infinite runway ---------- */
-
-const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-const edgeMat   = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-
-/* геометрии остаются теми же */
-const stripGeo = new THREE.PlaneGeometry(RUNWAY_WIDTH, RUNWAY_LENGTH);
-const edgeGeo  = new THREE.BoxGeometry(0.1, EDGE_HEIGHT, RUNWAY_LENGTH); // тонкие бортики
-
-// пул сегментов
-const runwaySegments = [];
-function createSegment(z){
-  // полоса
-  const strip = new THREE.Mesh(stripGeo, runwayMat);
-  strip.rotation.x = -Math.PI / 2;
-  strip.position.set(0, -0.5, z);
-  scene.add(strip);
-
-  // левый бортик
-  const leftEdge = new THREE.Mesh(edgeGeo, edgeMat);
-  leftEdge.position.set(-RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, z);
-  scene.add(leftEdge);
-
-  // правый бортик
-  const rightEdge = new THREE.Mesh(edgeGeo, edgeMat);
-  rightEdge.position.set( RUNWAY_WIDTH/2, -0.5 + EDGE_HEIGHT/2, z);
-  scene.add(rightEdge);
-
-  runwaySegments.push({ strip, leftEdge, rightEdge, centerZ: z });
-}
-
-// создаём первые два сегмента
-createSegment(0);
-createSegment(-RUNWAY_LENGTH);
-
-// в main-loop (в конце animate(), перед renderer.render) добавьте:
-function updateRunway(){
-  const ahead = nailGroup.position.z - 2 * RUNWAY_LENGTH; // точка «на 2 сегмента» впереди игрока
-  const last  = runwaySegments[runwaySegments.length - 1];
-
-  // если последний сегмент ещё не настолько далеко, добавляем новый
-  if (last.centerZ > ahead){
-    createSegment(last.centerZ - RUNWAY_LENGTH);
-  }
-
-  // удаляем старые сегменты, которые уже позади камеры
-  for (let i = runwaySegments.length - 1; i >= 0; i--){
-    const seg = runwaySegments[i];
-    if (seg.centerZ > nailGroup.position.z + 60){
-      scene.remove(seg.strip);
-      scene.remove(seg.leftEdge);
-      scene.remove(seg.rightEdge);
-      runwaySegments.splice(i, 1);
-    }
-  }
-}
 
 function spawnGate(side, z, data){
   const gateGroup = new THREE.Group();
