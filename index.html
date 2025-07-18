@@ -84,6 +84,16 @@ canvas{display:block}
   Дальность: <span id="range">15</span>
 </div>
 
+<div id="best-stats" style="position:absolute; top:10px; right:10px; font-size:18px;">
+  Лучшие параметры:<br>
+  Гвоздей: <span id="best-count">1</span><br>
+  Уровней: <span id="best-levels">1</span><br>
+  Скорость стрельбы: <span id="best-rate">1.0</span>/сек<br>
+  Дальность: <span id="best-range">15</span><br>
+  Текущий урон: <span id="cur-dmg">0</span><br>
+  Лучший урон: <span id="best-dmg">0</span>
+</div>
+
 <div id="msg">
   <div id="msgText"></div>
   <button onclick="location.reload()">Restart</button>
@@ -220,6 +230,8 @@ function redistributeLevels() {
   const avg   = Math.ceil(total / nailCount);
 
   nailLevels = Array(nailCount).fill(avg);
+  bestNailCount = Math.max(bestNailCount, nailCount);
+  bestNailLevelSum = Math.max(bestNailLevelSum, nailLevels.reduce((a,b)=>a+b,0));
 }
 
 /* функция пересборки толпы */
@@ -282,6 +294,76 @@ let fireRange = 15; // изначально маленькая дальност�
 const MAX_NAILS   = 5;
 let nailCount   = 1;
 let nailLevels  = [1];
+// ---------- лучший возможный набор игрока ----------
+let bestFireRate = 1;
+let bestFireRange = 15;
+let bestNailCount = 1;
+let bestNailLevelSum = 1;   // сумма уровней
+
+const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
+const RUNWAY_LENGTH = 80;
+const EDGE_HEIGHT   = 0.2;
+const gateWidth = RUNWAY_WIDTH / 2;
+const narrowGateWidth = RUNWAY_WIDTH / 3;
+
+// ---------- utility-функция по новому правилу ----------
+function utility(gate, current, twin) {
+  // 1. если action совпадает — выигрывает тот, кто добавит больше к текущему параметру
+  if (gate.action === twin.action) {
+    switch (gate.action) {
+      case 'rate':  return current.rate * gate.val;
+      case 'range': return current.range * gate.val;
+      case 'count': return current.count * gate.val;
+      case 'level': return current.count * gate.val; // аналогично
+      default:      return gate.val;
+    }
+  }
+
+  // 2. action разные — старая приоритетная шкала
+  const prio = {
+    level: 900,
+    count: (gate.val === 2 ? 950 : 800),
+    rate:  gate.val * 300,
+    range: (gate.mode === 'mul' ? 450 : gate.val * 200)
+  };
+  return prio[gate.action] || 0;
+}
+
+function calcWallHP() {
+  /* 1. Суммарный урон за ОДИН залп */
+  const totalPierce = nailLevels.reduce((a, b) => a + b, 0);
+
+  /* 2. Сколько залпов успеет выпустить игрок, пока цель в досягаемости
+       = дальность / скорость пули  (пули летят 0.4 ед/кадр @ 60 fps ≈ 24 ед/сек) */
+  const bulletSpeed = 24;                // единиц в секунду
+  const timeInRange = fireRange / bulletSpeed;
+
+  /* 3. Сколько залпов за это время */
+  const shotsFired  = Math.max(1, fireRate * timeInRange);
+
+  /* 4. Полный урон */
+  const fullDmg = totalPierce * shotsFired;
+
+  /* 5. Средний урон (текущий + лучший) */
+  const bestTotal = bestNailLevelSum;
+  const bestShots = Math.max(1, bestFireRate * (bestFireRange / bulletSpeed));
+  const bestDmg   = bestTotal * bestShots;
+
+  let baseDmg = (fullDmg + bestDmg) / 2;
+
+  /* 6. Случайные коэффициенты */
+  const rand1 = 0.7 + Math.random() * 0.3;
+  let hp      = baseDmg * rand1;
+
+  // НЕПРОБИВАЕМАЯ стена (как минимум, в 1.5 раз больше жизней, чем средний урон)
+  const rand2 = Math.random() < 0.3 ? (1.5 + Math.random() * 10) : 1;
+  hp *= rand2;
+
+  // обновляем UI урон
+  document.getElementById('cur-dmg').textContent  = Math.round(fullDmg);
+  document.getElementById('best-dmg').textContent = Math.round(bestDmg);
+  return Math.max(1, Math.round(hp) + 4);
+}
 
 /* ---------- RUNTIME FLAGS ---------- */
 let started   = false;
@@ -317,6 +399,18 @@ const heartGeo = new THREE.ExtrudeGeometry(_heartShape, 8);
 heartGeo.center();
 heartGeo.scale(0.05, 0.05, 0.05); // 0.4 / 4 = 0.1, но ещё ×0.5 чтобы ≈0.2 размер
 heartGeo.rotateZ(Math.PI);
+
+/* ---------- стенка ---------- */
+const wallGeo = new THREE.BoxGeometry(RUNWAY_WIDTH / 3, 2, 0.3);
+const wallMat = new THREE.MeshPhysicalMaterial({
+  color: 0xffffff,
+  transparent: true,
+  opacity: 0.6,
+  roughness: 0.1,
+  metalness: 0.2,
+  transmission: 0.7
+});
+const walls = [];
 
 const enemyGeo = heartGeo;   // shared
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
@@ -373,15 +467,14 @@ function pickGate() {
 
 /* ---------- dynamic spawning ---------- */
 let lastSpawnZ = 0;
+let lastObjectZ = 0;          // последняя занятая Z-координата объектов
+const MIN_GAP = 3;            // минимальное расстояние между объектами
+
 const SONG_LENGTH_SEC = 215;
 const FPS = 60;
 const levelLength = SONG_LENGTH_SEC * FPS;
 
 /* ---------- infinite runway ---------- */
-const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
-const RUNWAY_LENGTH = 80;
-const EDGE_HEIGHT   = 0.2;
-const gateWidth = RUNWAY_WIDTH / 2;
 
 const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
 const edgeMat   = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
@@ -517,6 +610,151 @@ function spawnGate(side, z, data){
     gates.push(gateGroup);
   };
 
+  function spawnNarrowGate(posX, posZ, data){
+    const gateGroup = new THREE.Group();
+    gateGroup.userData = data;
+
+    /* полупрозрачная панель – узкая */
+    const panelMat = new THREE.MeshStandardMaterial({
+      color: 0x00ff00,
+      transparent: true,
+      opacity: 0.3
+    });
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(narrowGateWidth, 2),
+      panelMat
+    );
+    panel.position.z = 0.01;
+    gateGroup.add(panel);
+
+    /* белая рамка */
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(narrowGateWidth, 2)),
+      new THREE.LineBasicMaterial({ color: 0xffffff })
+    );
+    edges.position.z = 0.02;
+    gateGroup.add(edges);
+
+    /* текст без растяжения */
+    const canvasW = 320;   // 400 * 0.8
+    const canvasH = 320;
+    const canvas = document.createElement('canvas');
+    canvas.width  = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+
+    const parts = data.label.includes(' ') ? data.label.split(' ') : ['ГЕЙТ', data.label];
+
+    ctx.font = 'bold 56px sans-serif';   // 70 * 0.8
+    ctx.textBaseline = 'top';
+    ctx.fillText(parts[0], canvasW / 2, 48);   // 60 * 0.8
+
+    ctx.font = 'bold 88px sans-serif';   // 110 * 0.8
+    ctx.textBaseline = 'middle';
+    ctx.fillText(parts[1] || '', canvasW / 2, canvasH / 2 + 32);   // 40 * 0.8
+
+    const tex = new THREE.CanvasTexture(canvas);
+    const textPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(narrowGateWidth, 2),   // геометрия та же
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true })
+    );
+    textPlane.position.z = 0.03;
+    gateGroup.add(textPlane);
+
+    /* свечение и позиция */
+    const light = new THREE.PointLight(0x00ff00, 1.2, 6);
+    light.position.set(0, 0.5, 0);
+    gateGroup.add(light);
+
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0x00ff00, transparent: true, opacity: 0.25, side: THREE.DoubleSide
+    });
+    const glowPlane = new THREE.Mesh(
+      new THREE.PlaneGeometry(narrowGateWidth + 0.2, 2.2),
+      glowMat
+    );
+    glowPlane.position.z = -0.05;
+    gateGroup.add(glowPlane);
+
+    gateGroup.position.set(posX, 0, posZ);
+    scene.add(gateGroup);
+    gates.push(gateGroup);
+  }
+
+  function createWall(pos, z) {
+    const wall = new THREE.Mesh(wallGeo, wallMat.clone());
+    wall.position.set(pos, 0, z);
+
+    // HP
+    wall.userData.hp = calcWallHP();
+    wall.userData.maxHp = wall.userData.hp;
+
+    // собственная канва
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    wall.userData.canvas = canvas;
+    wall.userData.ctx = ctx;
+
+    // первая отрисовка
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 96px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(wall.userData.hp.toString(), 128, 128);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    wall.material.map = tex;
+    wall.material.needsUpdate = true;
+
+    scene.add(wall);
+    walls.push(wall);
+    return wall;
+}
+
+function applyToBest(gate) {
+  const v = Math.abs(gate.val);      // берём модуль
+  switch (gate.action) {
+    case 'rate':
+      bestFireRate = (gate.mode === 'mul')
+        ? Math.max(0.2, bestFireRate * v)
+        : Math.max(0.2, bestFireRate + (gate.val > 0 ? v : -v));
+      break;
+
+    case 'range':
+      bestFireRange = (gate.mode === 'mul')
+        ? Math.max(1, bestFireRange * v)
+        : Math.max(1, bestFireRange + (gate.val > 0 ? v : -v));
+      break;
+
+    case 'count':
+      bestNailCount = Math.max(1, Math.min(MAX_NAILS, bestNailCount + (gate.val > 0 ? v : -v)));
+      bestNailLevelSum += (gate.val > 0 ? v : -v) * (v === 2 ? 2 : 1);
+      break;
+
+    case 'level':
+      bestNailLevelSum += (gate.val > 0 ? v : -v) * bestNailCount;
+      break;
+  }
+
+  /* UI-обновление */
+  document.getElementById('best-count').textContent  = bestNailCount;
+  document.getElementById('best-levels').textContent = bestNailLevelSum;
+  document.getElementById('best-rate').textContent   = bestFireRate.toFixed(1);
+  document.getElementById('best-range').textContent  = bestFireRange;
+}
+
+  function canPlaceAt(z) {
+    return z < lastObjectZ - MIN_GAP;
+  }
+
 
 function spawnWave(){
   /* 1. мощность и кол-во */
@@ -563,6 +801,21 @@ function spawnWave(){
     enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
   }
 
+  /* ---------- спавн стенок ---------- */
+  if (Math.random() < 0.4 && canPlaceAt(spawnZ)) {
+    const wallPositions = [-RUNWAY_WIDTH / 3, 0, RUNWAY_WIDTH / 3];
+    const count = Math.random() < 0.6 ? 1 : 2;
+    const taken = new Set();
+    for (let i = 0; i < count; i++) {
+      let pos;
+      do { pos = wallPositions[Math.floor(Math.random() * 3)]; }
+      while (taken.has(pos));
+      taken.add(pos);
+      createWall(pos, spawnZ);
+    }
+    lastObjectZ = spawnZ;
+  }
+
   /* 3. спавним кучно */
   for (let i = 0; i < crowdSize; i++){
     const e = new THREE.Mesh(enemyGeo, enemyMat);
@@ -579,28 +832,77 @@ function spawnWave(){
     e.lookAt(nailGroup.position.x, 0.3, nailGroup.position.z);
   }
 
-/* ---------- gates (strict lane, same Z) ---------- */
-if (Math.random() < 0.7) {
-
-  // const gateWidth = RUNWAY_WIDTH / 2;
-  const sides = Math.random() < 0.6
-    ? [Math.random() < 0.5 ? -1 : 1]   // один гейт: лево или право
-    : [-1, 1];                         // два гейта: одновременно
-
+  /* ---------- gates (strict lane, same Z) ---------- */
   const spawnZGate = spawnZ + Math.random() * 10;
+  if (Math.random() < 0.7 && canPlaceAt(spawnZGate)) {
 
-if (sides.length === 1) {
-  spawnGate(sides[0], spawnZGate, pickGate());
-} else {
-  // два разных гейта
-  let g1 = pickGate();
-  let g2;
-  do { g2 = pickGate(); } while (g2.label === g1.label);
-  spawnGate(sides[0], spawnZGate, g1);
-  spawnGate(sides[1], spawnZGate, g2);
-}
+    // const gateWidth = RUNWAY_WIDTH / 2;
+    const sides = Math.random() < 0.6
+      ? [Math.random() < 0.5 ? -1 : 1]   // один гейт: лево или право
+      : [-1, 1];                         // два гейта: одновременно
 
-}
+    if (sides.length === 1) {
+      const g = pickGate();
+      spawnGate(sides[0], spawnZGate, pickGate());
+      // --- при спавне одиночного положительного гейта тоже прокачиваем best ---
+      if (g.val > 0) {
+        applyToBest(g);
+      }
+    } else {
+      // два разных гейта
+      let g1 = pickGate();
+      let g2;
+      do { g2 = pickGate(); } while (g2.label === g1.label);
+      spawnGate(sides[0], spawnZGate, g1);
+      spawnGate(sides[1], spawnZGate, g2);
+
+      // выбираем лучший из двух для best-параметров
+      const candidates = [g1, g2];
+
+      // 1) один положительный, один отрицательный
+      const pos = candidates.filter(c => c.val > 0);
+      const neg = candidates.filter(c => c.val < 0);
+      let bestForBest;
+
+      if (pos.length === 1 && neg.length === 1) {
+          bestForBest = pos[0];            // всегда берём положительный
+      } else {
+          // 2) одинаковые знаки
+          const sameSign = g1.val > 0 ? 1 : -1;
+
+          if (g1.action === g2.action) {
+              // одинаковый action → сравниваем модификацию параметра
+              let v1, v2;
+              switch (g1.action) {
+                  case 'rate':
+                      v1 = bestFireRate + g1.val;
+                      v2 = bestFireRate + g2.val;
+                      break;
+                  case 'range':
+                      v1 = (g1.mode === 'mul') ? bestFireRange * g1.val : bestFireRange + g1.val;
+                      v2 = (g2.mode === 'mul') ? bestFireRange * g2.val : bestFireRange + g2.val;
+                      break;
+                  case 'count':
+                      v1 = bestNailCount + g1.val;
+                      v2 = bestNailCount + g2.val;
+                      break;
+                  case 'level':
+                      v1 = bestNailLevelSum + g1.val * bestNailCount;
+                      v2 = bestNailLevelSum + g2.val * bestNailCount;
+                      break;
+              }
+              bestForBest = (sameSign > 0) ? (v1 >= v2 ? g1 : g2) : (v1 <= v2 ? g1 : g2);
+          } else {
+              // 3) разные action → utility
+              const u1 = utility(g1, { rate: bestFireRate, range: bestFireRange, count: bestNailCount }, g2);
+              const u2 = utility(g2, { rate: bestFireRate, range: bestFireRange, count: bestNailCount }, g1);
+              bestForBest = (sameSign > 0) ? (u1 >= u2 ? g1 : g2) : (u1 <= u2 ? g1 : g2);
+          }
+      }
+      applyToBest(bestForBest);
+    }
+  }
+  lastObjectZ = spawnZGate;
 }
 
 /* ---------- controls ---------- */
@@ -658,19 +960,40 @@ const DETECT_DISTANCE = 20;   // на каком расстоянии враг �
 const ENEMY_SPEED     = 0.1; // базовая скорость врага
 const difficultyFactor = 0.5;   // <-- крутите этим для сложности (0.5–2.0)
 
-function updateEnemiesAI(){
-  enemies.forEach(e=>{
+function updateEnemiesAI() {
+  const wallBoxes = walls.map(w => ({
+    x: w.position.x,
+    z: w.position.z,
+    halfW: RUNWAY_WIDTH / 6 + 0.2,   // половина ширины стенки + запас
+    halfH: 1.1                       // половина глубины
+  }));
+
+  enemies.forEach(e => {
     const dist = e.position.distanceTo(nailGroup.position);
-    if (dist < DETECT_DISTANCE){
-      // направление к игроку
-      const dir = new THREE.Vector3().subVectors(
-      new THREE.Vector3(nailGroup.position.x, 0, nailGroup.position.z),
-      e.position
-    ).normalize();
-      dir.y = 0; // не летим вверх
-      dir.z *= 0.2; // не летим вперёд
-      // ускорение пропорционально difficultyFactor
-      e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor);
+    if (dist < DETECT_DISTANCE) {
+      const dir = new THREE.Vector3()
+        .subVectors(
+          new THREE.Vector3(nailGroup.position.x, 0, nailGroup.position.z),
+          e.position
+        )
+        .normalize();
+      dir.y = 0;
+      dir.z *= 0.2;
+
+      // проверка пересечения со стенками
+      let blocked = false;
+      for (const box of wallBoxes) {
+        const dx = Math.abs(e.position.x - box.x);
+        const dz = Math.abs(e.position.z - box.z);
+        if (dx < box.halfW && dz < box.halfH) {
+          blocked = true;
+          break;
+        }
+      }
+
+      if (!blocked) {
+        e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor);
+      }
     }
   });
 }
@@ -679,7 +1002,7 @@ function fadeOutGate(gate) {
   const fadeMat = gate.children.find(c => c.material.transparent)?.material;
   if (!fadeMat) { scene.remove(gate); return; }  // на всякий случай
 
-  let alpha = 1;
+  let alpha = 0.4;
   const fadeStep = 0.05;
   const fadeInterval = setInterval(() => {
     alpha -= fadeStep;
@@ -794,20 +1117,20 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
 
 /* bullet–enemy collision */
 for (let i = bullets.length - 1; i >= 0; i--){
-  const bData = bullets[i];     // объект-контейнер
-  const bMesh = bData.mesh;     // сам меш
+  const b = bullets[i];     // объект-контейнер
+  const bMesh = b.mesh;     // сам меш
 
   for (let j = enemies.length - 1; j >= 0; j--){
     const e = enemies[j];
     const hitDist = 0.5;   // можно оставить фиксированным
 
     if (bMesh.position.distanceTo(e.position) < hitDist){
-      bData.pierce--;
+      b.pierce--;
 
       scene.remove(e);
       enemies.splice(j, 1);
 
-      if (bData.pierce <= 0){
+      if (b.pierce <= 0){
         scene.remove(bMesh);
         bullets.splice(i, 1);
         break;              // пуля уничтожена – выходим из цикла по врагам
@@ -851,6 +1174,59 @@ for (let i = bullets.length - 1; i >= 0; i--){
     }
   }
 
+  /* ---------- player–wall collision ---------- */
+  for (let i = walls.length - 1; i >= 0; i--) {
+    const wall = walls[i];
+    let hit = false;
+
+    for (let j = nailGroup.children.length - 1; j >= 0; j--) {
+      const nail = nailGroup.children[j];
+      const dx = nailGroup.position.x + nail.position.x - wall.position.x;
+      const dz = nailGroup.position.z - wall.position.z;
+      if (Math.sqrt(dx * dx + dz * dz) < 1.2) {
+        hit = true;
+
+        const lostLevels = nailLevels[j];
+        wall.userData.hp -= lostLevels + (nailLevels[j] === 1 ? 1 : 0); // +1 за первый уровень
+
+        // обновить картинку на стенке
+        const { ctx, canvas } = wall.userData;
+        ctx.clearRect(0, 0, 256, 256);
+        ctx.fillStyle = '#000a';
+        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 96px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(wall.userData.hp.toString(), 128, 128);
+
+        const newTex = new THREE.CanvasTexture(canvas);
+        wall.material.map = newTex;
+        wall.material.needsUpdate = true;
+
+        nailLevels[j] = Math.max(0, nailLevels[j] - lostLevels);
+        if (nailLevels[j] === 0) {
+          nailCount--;
+          nailLevels.splice(j, 1);
+          rebuildNailFormation();
+          if (nailCount === 0) {
+            gameOver = true;
+            showMsg('Game Over!');
+            return;
+          }
+        }
+        rebuildNailFormation();
+        break;
+      }
+    }
+
+    if (wall.userData.hp <= 0) {
+      scene.remove(wall);
+      walls.splice(i, 1);
+      // превращаем в положительный gate (код уже есть)
+    }
+  }
+
   /* player–gate collision */
   gates.forEach((g, idx) => {
     let touched = false;
@@ -867,8 +1243,10 @@ for (let i = bullets.length - 1; i >= 0; i--){
 
     if (!touched) return;
 
-    const d = g.userData;
+    if (!gates.includes(g)) return;
+    console.log('gate idx', idx, 'pos.z', g.position.z, 'player.z', nailGroup.position.z);
 
+    const d = g.userData;
     if (d.action === 'rate'){
       fireRate = Math.max(0.2, fireRate + d.val);
     }
@@ -929,16 +1307,54 @@ for (let i = bullets.length - 1; i >= 0; i--){
     document.getElementById('levels').textContent = nailLevels.reduce((a,b)=>a+b,0);
     document.getElementById('rate').textContent   = fireRate.toFixed(1);
     document.getElementById('range').textContent = fireRange.toFixed(1);
-
-    scene.remove(g); gates.splice(idx,1);
-
-    // найти «парного» гейт на той же Z
-    const twin = gates.find(g2 => g2 !== g && Math.abs(g2.position.z - g.position.z) < 0.5);
-    if (twin) {
-      gates.splice(gates.indexOf(twin), 1);
-      fadeOutGate(twin);
-    }
+    const index = gates.indexOf(g);
+    if (index !== -1) gates.splice(index, 1);
+    scene.remove(g);
   });
+
+  /* ---------- обработка стенок ---------- */
+  for (let i = walls.length - 1; i >= 0; i--) {
+    const wall = walls[i];
+    for (let j = bullets.length - 1; j >= 0; j--) {
+      const b = bullets[j];
+      if (b.mesh.position.distanceTo(wall.position) < 1) {
+        // наносим урон
+        wall.userData.hp -= b.pierce;
+        const { ctx, canvas } = wall.userData;
+        ctx.clearRect(0, 0, 256, 256);
+        ctx.fillStyle = '#000a';
+        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 96px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(wall.userData.hp.toString(), 128, 128);
+        wall.material.map.needsUpdate = true;
+
+        scene.remove(b.mesh);
+        bullets.splice(j, 1);
+
+        if (wall.userData.hp <= 0) {
+          scene.remove(wall);
+          walls.splice(i, 1);
+
+          // превращаем в положительный gate
+          const roll = Math.random();
+          let gateData;
+          if (roll < 0.45) gateData = { label: 'УРОВЕНЬ +1', action: 'level', val: 1 };
+          else if (roll < 0.70) gateData = { label: 'ГВОЗДИ +1', action: 'count', val: 1 };
+          else if (roll < 0.85) gateData = { label: 'ДАЛЬНОСТЬ +2', action: 'range', val: 2 };
+          else gateData = { label: 'СТРЕЛЬБА +1', action: 'rate', val: 1 };
+
+          spawnNarrowGate(wall.position.x, wall.position.z, gateData);
+          applyToBest(gateData);
+        }
+        break;
+      }
+    }
+  }
+
+  
 
   /* win condition по реальному времени */
   const elapsedSec = (performance.now() - songStartTime) / 1000;
@@ -957,7 +1373,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
   camera.lookAt(nailGroup.position.x, 0, nailGroup.position.z - 3);
 
   /* удаляем врагов и гейты за спиной */
-  const behind = nailGroup.position.z + 10;  // порог удаления
+  const behind = nailGroup.position.z + 15;  // порог удаления
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].position.z > behind) {
       scene.remove(enemies[i]);
@@ -970,6 +1386,13 @@ for (let i = bullets.length - 1; i >= 0; i--){
       gates.splice(i, 1);
     }
   }
+  for (let i = walls.length - 1; i >= 0; i--) {
+  if (walls[i].position.z > behind) {
+    scene.remove(walls[i]);
+    walls.splice(i, 1);
+  }
+}
+
   updateRunway();
   
   /* позиционируем баннер строго над центром толпы без наклона */
