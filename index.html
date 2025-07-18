@@ -705,6 +705,59 @@ function spawnGate(side, z, data){
     gates.push(gateGroup);
   }
 
+  function applyGate(data) {
+    if (data.action === 'rate') {
+      fireRate = Math.max(0.2, fireRate + data.val);
+    }
+    if (data.action === 'range') {
+      if (data.mode === 'mul') {
+        fireRange = Math.max(1, fireRange * data.val);
+      } else {
+        fireRange = Math.max(1, fireRange + data.val);
+      }
+      rebuildNailFormation();
+    }
+    if (data.action === 'count') {
+      if (data.val === -1 && nailCount === 1) {
+        gameOver = true;
+        showMsg('Game Over!');
+        return true; // сигнал "конец"
+      }
+      if (data.val > 0) {
+        if (data.val === 2 && nailCount === 4) {
+          nailCount = 5;
+          nailLevels.push(1);
+          nailLevels.forEach((_, i) => nailLevels[i]++);
+        } else if (nailCount === MAX_NAILS) {
+          nailLevels.forEach((_, i) => nailLevels[i]++);
+        } else {
+          const maxLevel = Math.max(...nailLevels, 1);
+          for (let i = 0; i < data.val; i++) nailLevels.push(maxLevel);
+          nailCount += data.val;
+        }
+        redistributeLevels();
+      } else {
+        nailCount = Math.max(1, nailCount + data.val);
+        for (let i = 0; i < -data.val; i++) nailLevels.pop();
+        redistributeLevels();
+      }
+      rebuildNailFormation();
+    }
+    if (data.action === 'level') {
+      for (let i = 0; i < nailCount; i++) {
+        nailLevels[i] = Math.max(1, nailLevels[i] + data.val);
+      }
+      rebuildNailFormation();
+    }
+
+    // обновляем UI
+    document.getElementById('count').textContent  = nailCount;
+    document.getElementById('levels').textContent = nailLevels.reduce((a,b)=>a+b,0);
+    document.getElementById('rate').textContent   = fireRate.toFixed(1);
+    document.getElementById('range').textContent = fireRange.toFixed(1);
+    return false;
+  }
+
   function createWall(pos, z, delta) {
     const wall = new THREE.Mesh(wallGeo, wallMat.clone());
     wall.position.set(pos, 0, z);
@@ -888,9 +941,34 @@ function spawnWave(delta){
       let g1 = pickGate();
       let g2;
       do { g2 = pickGate(); } while (g2.label === g1.label);
+
+      let pairTaken = false;   // <-- один раз на волну
       spawnGate(sides[0], spawnZGate, g1);
       spawnGate(sides[1], spawnZGate, g2);
 
+      // связать пары
+      gates[gates.length-2].userData.twin = gates[gates.length-1];
+      gates[gates.length-1].userData.twin = gates[gates.length-2];
+
+      // назначим обоим гейтам одну и ту же функцию-обработчик
+      [gates[gates.length-2], gates[gates.length-1]].forEach(g => {
+        g.userData.onTake = () => {
+          if (pairTaken) return;
+          pairTaken = true;
+
+          // забираем только текущий
+          applyGate(g.userData); // твоя логика
+          gates.splice(gates.indexOf(g), 1);
+          scene.remove(g);
+
+          // второй просто fade-out
+          const other = gates.find(gg => gg !== g && gg.position.z === g.position.z);
+          if (other) {
+            fadeOutGate(other);
+            gates.splice(gates.indexOf(other), 1);
+          }
+        };
+});
       // выбираем лучший из двух для best-параметров
       const candidates = [g1, g2];
 
@@ -1263,89 +1341,28 @@ for (let i = bullets.length - 1; i >= 0; i--){
   }
 
   /* player–gate collision */
-  gates.forEach((g, idx) => {
+  for (let i = gates.length - 1; i >= 0; i--) {
+    const g = gates[i];
     let touched = false;
-
-    // проверяем касание любым гвоздём
-    for (const nail of nailGroup.children){
+    for (const nail of nailGroup.children) {
       const dx = nailGroup.position.x + nail.position.x - g.position.x;
-      const dz = nailGroup.position.z                - g.position.z;
-      if (Math.sqrt(dx*dx + dz*dz) < 1.5){
-        touched = true;
-        break;
-      }
+      const dz = nailGroup.position.z - g.position.z;
+      if (Math.sqrt(dx*dx + dz*dz) < 1.5) { touched = true; break; }
+    }
+    if (!touched) continue;
+
+    const gameOverFlag = applyGate(g.userData);
+    if (gameOverFlag) return;          // Game Over
+
+    // 2-й гейт (если пара) — fade-out
+    if (g.userData.twin) {
+      fadeOutGate(g.userData.twin);
+      gates.splice(gates.indexOf(g.userData.twin), 1);
     }
 
-    if (!touched) return;
-
-    if (!gates.includes(g)) return;
-    console.log('gate idx', idx, 'pos.z', g.position.z, 'player.z', nailGroup.position.z);
-
-    const d = g.userData;
-    if (d.action === 'rate'){
-      fireRate = Math.max(0.2, fireRate + d.val);
-    }
-
-    if (d.action === 'range'){
-      if (d.mode === 'mul'){
-        fireRange = Math.max(1, fireRange * d.val);
-      } else {
-        fireRange = Math.max(1, fireRange + d.val); // ограничение снизу
-      }
-      rebuildNailFormation();
-    }
-
-
-    if (d.action === 'count'){
-      // если отрицательный gate «-1 гвоздь» и остался всего один
-      if (d.val === -1 && nailCount === 1){
-        gameOver = true;
-        showMsg('Game Over!'); 
-        return;
-      }
-      if (d.val > 0) {
-        // ---------- единое место логики ----------
-        if (d.val === 2 && nailCount === 4) {
-          // специальный ГВОЗДИ +2 при 4 гвоздях
-          nailCount = 5;                        // один новый гвоздь
-          nailLevels.push(1);                   // уровень 1
-          nailLevels.forEach((_, i) => nailLevels[i]++); // +1 всем
-        } else if (nailCount === MAX_NAILS) {
-          // любой положительный гейт при 5
-          nailLevels.forEach((_, i) => nailLevels[i]++);
-        } else {
-          // обычное добавление
-          const maxLevel = Math.max(...nailLevels, 1);
-          for (let i = 0; i < d.val; i++) nailLevels.push(maxLevel);
-          nailCount += d.val;
-        }
-        redistributeLevels();
-      } else {
-        // отрицательные (удаление)
-        nailCount = Math.max(1, nailCount + d.val); // d.val отрицательное
-        for (let i = 0; i < -d.val; i++) nailLevels.pop();
-        redistributeLevels();
-      }
-
-      rebuildNailFormation();
-    }
-
-    if (d.action === 'level'){
-      for (let i = 0; i < nailCount; i++){
-        nailLevels[i] = Math.max(1, nailLevels[i] + d.val);
-      }
-      rebuildNailFormation();
-    }
-
-    // обновляем UI
-    document.getElementById('count').textContent  = nailCount;
-    document.getElementById('levels').textContent = nailLevels.reduce((a,b)=>a+b,0);
-    document.getElementById('rate').textContent   = fireRate.toFixed(1);
-    document.getElementById('range').textContent = fireRange.toFixed(1);
-    const index = gates.indexOf(g);
-    if (index !== -1) gates.splice(index, 1);
+    gates.splice(i, 1);
     scene.remove(g);
-  });
+  }
 
   /* ---------- обработка стенок ---------- */
   for (let i = walls.length - 1; i >= 0; i--) {
