@@ -120,6 +120,20 @@ canvas{display:block}
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
+/* ---------- TEXTURE CACHE ---------- */
+const textureCache = new Map();   // key → CanvasTexture
+function getTexture(key, drawFn) {
+  if (!textureCache.has(key)) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 256;
+    const ctx = canvas.getContext('2d');
+    drawFn(ctx);                 // ← вот тут ctx передаётся в твою функцию
+    textureCache.set(key, new THREE.CanvasTexture(canvas));
+  }
+  return textureCache.get(key);
+}
+
 /* ---------- preloader with progress ---------- */
 const preEl      = document.getElementById('preloader');
 const startBtn   = document.getElementById('startBtn');
@@ -274,15 +288,17 @@ function rebuildNailFormation(){
 
   /* update banner text */
   const totalLevel = nailLevels.reduce((a, b) => a + b, 0);
-  bannerCtx.clearRect(0, 0, 256, 128);
-  bannerCtx.fillStyle = '#000a';
-  bannerCtx.fillRect(0, 0, 256, 128);
-  bannerCtx.fillStyle = '#fff';
-  bannerCtx.textAlign = 'center';
-  bannerCtx.textBaseline = 'middle';
-  bannerCtx.font = 'bold 64px sans-serif';
-  bannerCtx.fillText(totalLevel.toString(), 128, 64);
-  bannerTex.needsUpdate = true;
+  bannerMat.map = getTexture(`level_${totalLevel}`, (ctx) => {
+    ctx.canvas.width = 256; ctx.canvas.height = 128;
+    ctx.fillStyle = '#000a';
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 64px sans-serif';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(totalLevel.toString(), 128, 64);
+  });
+  bannerMat.map.needsUpdate = true;
 }
 
 /* ---------- shooting params ---------- */
@@ -355,8 +371,8 @@ function calcWallHP(delta) {
   const rand1 = 0.7 + Math.random() * 0.3;
   let hp      = baseDmg * rand1;
 
-  // НЕПРОБИВАЕМАЯ стена (как минимум, в 1.5 раз больше жизней, чем средний урон)
-  const rand2 = Math.random() < 0.3 ? (1.5 + Math.random() * 10) : 1;
+  // НЕПРОБИВАЕМАЯ стена (как минимум, в 2 раза больше жизней, чем средний урон)
+  const rand2 = Math.random() < 0.3 ? (2 + Math.random() * 10) : 1;
   hp *= rand2;
 
   // обновляем UI урон
@@ -703,24 +719,16 @@ function spawnGate(side, z, data){
       wall.material.emissive.set(0x770000);
     }
 
-    // собственная канва
-    const canvas = document.createElement('canvas');
-    canvas.width = canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-    wall.userData.canvas = canvas;
-    wall.userData.ctx = ctx;
-
-    // первая отрисовка
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 256, 256);
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 96px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(wall.userData.hp.toString(), 128, 128);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    wall.material.map = tex;
+    const hp = wall.userData.hp;
+        wall.material.map = getTexture(`hp_${hp}`, (ctx) => {
+          ctx.fillStyle = '#000a';
+          ctx.fillRect(0, 0, 256, 256);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 96px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(hp.toString(), 128, 128);
+        });
     wall.material.needsUpdate = true;
 
     scene.add(wall);
@@ -1218,19 +1226,16 @@ for (let i = bullets.length - 1; i >= 0; i--){
         const lostLevels = nailLevels[j];
         wall.userData.hp -= lostLevels + (nailLevels[j] === 1 ? 1 : 0); // +1 за первый уровень
 
-        // обновить картинку на стенке
-        const { ctx, canvas } = wall.userData;
-        ctx.clearRect(0, 0, 256, 256);
-        ctx.fillStyle = '#000a';
-        ctx.fillRect(0, 0, 256, 256);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 96px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(wall.userData.hp.toString(), 128, 128);
-
-        const newTex = new THREE.CanvasTexture(canvas);
-        wall.material.map = newTex;
+        const hp = wall.userData.hp;
+        wall.material.map = getTexture(`hp_${hp}`, ctx => {
+          ctx.fillStyle = '#000a';
+          ctx.fillRect(0, 0, 256, 256);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 96px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(hp.toString(), 128, 128);
+        });
         wall.material.needsUpdate = true;
 
         nailLevels[j] = Math.max(0, nailLevels[j] - lostLevels);
@@ -1349,16 +1354,17 @@ for (let i = bullets.length - 1; i >= 0; i--){
       if (b.mesh.position.distanceTo(wall.position) < 1) {
         // наносим урон
         wall.userData.hp -= b.pierce;
-        const { ctx, canvas } = wall.userData;
-        ctx.clearRect(0, 0, 256, 256);
-        ctx.fillStyle = '#000a';
-        ctx.fillRect(0, 0, 256, 256);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 96px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(wall.userData.hp.toString(), 128, 128);
-        wall.material.map.needsUpdate = true;
+        const hp = wall.userData.hp;
+        wall.material.map = getTexture(`hp_${hp}`, ctx => {
+          ctx.fillStyle = '#000a';
+          ctx.fillRect(0, 0, 256, 256);
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 96px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(hp.toString(), 128, 128);
+        });
+        wall.material.needsUpdate = true;
 
         scene.remove(b.mesh);
         bullets.splice(j, 1);
