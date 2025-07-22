@@ -429,6 +429,32 @@ const wallMat = new THREE.MeshPhysicalMaterial({
   transmission: 0.7
 });
 const walls = [];
+
+// КЭШ для HP-текстур
+const hpTextureCache = new Map();
+
+function getHPTexture(hp) {
+  if (hpTextureCache.has(hp)) return hpTextureCache.get(hp);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = '#000a';
+  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 96px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(hp.toString(), 128, 128);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  hpTextureCache.set(hp, tex);
+  return tex;
+}
+
+
 /* ---------- RUNWAY POOL (без new Mesh каждый кадр) ---------- */
 const RUNWAY_POOL_SIZE = 6;               // 6 сегментов достаточно
 const runwayPool = [];                    // {mesh, inUse, centerZ}
@@ -774,15 +800,7 @@ function spawnGate(side, z, data){
     }
 
     const hp = wall.userData.hp;
-        wall.material.map = getTexture(`hp_${hp}`, (ctx) => {
-          ctx.fillStyle = '#000a';
-          ctx.fillRect(0, 0, 256, 256);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 96px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(hp.toString(), 128, 128);
-        });
+    wall.material.map = getHPTexture(hp);
     wall.material.needsUpdate = true;
 
     scene.add(wall);
@@ -958,6 +976,7 @@ function spawnWave(delta){
 
           // забираем только текущий
           applyGate(g.userData); // твоя логика
+          g.userData.used = true;
           gates.splice(gates.indexOf(g), 1);
           scene.remove(g);
 
@@ -1306,15 +1325,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
         wall.userData.hp -= lostLevels + (nailLevels[j] === 1 ? 1 : 0); // +1 за первый уровень
 
         const hp = wall.userData.hp;
-        wall.material.map = getTexture(`hp_${hp}`, ctx => {
-          ctx.fillStyle = '#000a';
-          ctx.fillRect(0, 0, 256, 256);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 96px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(hp.toString(), 128, 128);
-        });
+        wall.material.map = getHPTexture(hp);
         wall.material.needsUpdate = true;
 
         nailLevels[j] = Math.max(0, nailLevels[j] - lostLevels);
@@ -1343,26 +1354,47 @@ for (let i = bullets.length - 1; i >= 0; i--){
   /* player–gate collision */
   for (let i = gates.length - 1; i >= 0; i--) {
     const g = gates[i];
+    if (!g.visible || g.userData.used) continue;
+
+    const gateX = g.position.x;
+    const gateZ = g.position.z;
+
+    // 💡 определим ширину гейта по положению
+    const gateW = (Math.abs(gateX) < 0.1) ? RUNWAY_WIDTH / 3 / 2 : RUNWAY_WIDTH / 2 / 2;
+    const gateH = 1.0; // толщина гейта по Z
+
     let touched = false;
+
     for (const nail of nailGroup.children) {
-      const dx = nailGroup.position.x + nail.position.x - g.position.x;
-      const dz = nailGroup.position.z - g.position.z;
-      if (Math.sqrt(dx*dx + dz*dz) < 1.5) { touched = true; break; }
+      const nailX = nailGroup.position.x + nail.position.x;
+      const nailZ = nailGroup.position.z;
+
+      const dx = Math.abs(nailX - gateX);
+      const dz = Math.abs(nailZ - gateZ);
+
+      if (dx <= gateW && dz <= gateH) {
+        touched = true;
+        break;
+      }
     }
+
     if (!touched) continue;
 
-    const gameOverFlag = applyGate(g.userData);
-    if (gameOverFlag) return;          // Game Over
+    if (typeof g.userData.onTake === 'function') {
+      g.userData.onTake();
+    } else {
+      g.userData.used = true;
+      const gameOverFlag = applyGate(g.userData);
+      if (gameOverFlag) return;
 
-    // 2-й гейт (если пара) — fade-out
-    if (g.userData.twin) {
-      fadeOutGate(g.userData.twin);
-      gates.splice(gates.indexOf(g.userData.twin), 1);
+      fadeOutGate(g);
+      scene.remove(g);
+      gates.splice(i, 1);
     }
-
-    gates.splice(i, 1);
-    scene.remove(g);
   }
+
+
+
 
   /* ---------- обработка стенок ---------- */
   for (let i = walls.length - 1; i >= 0; i--) {
@@ -1373,15 +1405,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
         // наносим урон
         wall.userData.hp -= b.pierce;
         const hp = wall.userData.hp;
-        wall.material.map = getTexture(`hp_${hp}`, ctx => {
-          ctx.fillStyle = '#000a';
-          ctx.fillRect(0, 0, 256, 256);
-          ctx.fillStyle = '#ffffff';
-          ctx.font = 'bold 96px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.textBaseline = 'middle';
-          ctx.fillText(hp.toString(), 128, 128);
-        });
+        wall.material.map = getHPTexture(hp);
         wall.material.needsUpdate = true;
 
         scene.remove(b.mesh);
