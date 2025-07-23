@@ -1191,17 +1191,16 @@ function animate(time){
 
   updateEnemiesAI();
   // ⚡ 4. Clean stale labels
-  enemyLabels = enemyLabels.filter(l => enemies.some(e => l.ids.includes(e.uuid)));
+  // enemyLabels = enemyLabels.filter(l => enemies.some(e => l.ids.includes(e.uuid)));
 
 /* ---------- центральный label над группой ---------- */
 for (let k = enemyLabels.length - 1; k >= 0; k--) {
   const { ids, mesh, initial } = enemyLabels[k];
 
-  // ищем только среди текущих врагов и только по сохранённым UUID
-  const alive = [];
-  for (const e of enemies) {
-    if (ids.includes(e.uuid)) alive.push(e);
-  }
+  // ⚡ проверяем, есть ли хоть один живой из этой волны
+  const alive = enemies.filter(e =>
+    ids.includes(e.uuid) && e.position.z < nailGroup.position.z + 10
+  );
 
   if (alive.length === 0) {
     scene.remove(mesh);
@@ -1427,11 +1426,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
           spawnNarrowGate(wall.position.x, wall.position.z, gateData);
           applyToBest(gateData);
         }
-<<<<<<< HEAD
         break;
-=======
-        redistributeLevels();
->>>>>>> parent of 2c6e415 (bud fixes)
       }
     }
   }
