@@ -79,10 +79,11 @@ canvas{display:block}
 <div id="ui">
   Гвоздей: <span id="count">1</span> |
   Уровней: <span id="levels">1</span><br>
-  Скорость стрельбы: <span id="rate">1.0</span>/сек
-  <!-- Пробив.: <span id="pierce">1</span><br> -->
-  Дальность: <span id="range">15</span>
+  Скорость стрельбы: <span id="rate">1.0</span>/сек |
+  Дальность: <span id="range">15</span><br>
+  FPS: <span id="fps">0</span>
 </div>
+
 
 <div id="msg">
   <div id="msgText"></div>
@@ -299,6 +300,11 @@ const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
 const bigBulletMat = new THREE.MeshStandardMaterial({ color: 0xff8800 });
 
 const bullets = [];
+// скорость пуль в юнитах/сек (≈0.4 юн/кадр при 60fps → ~24 юн/сек)
+const BULLET_SPEED = 24;
+// храним время предыдущего кадра для расчёта dt
+let prevTime = 0;
+
 
 /* ---------- enemies ---------- */
 /* ---------- shared heart geometry ---------- */
@@ -616,7 +622,9 @@ window.addEventListener('touchmove', e => {
 camera.position.set(0,5,4);                       // <-- ближе
 camera.lookAt(0,-1,nailGroup.position.z - 3);        // <-- ниже и точнее
 
-let speed = 0.1;
+// скорость игрока в юнитах/сек
+let playerSpeed = 6;
+
 // document.addEventListener('click', () => {
 //   if (!started){ document.getElementById('bgm').play(); started = true; }
 // });
@@ -641,8 +649,8 @@ function shoot(time){
     );
     scene.add(b);
 
-    // пуля знает свой уровень-пробой
-    bullets.push({mesh:b, vx:0, vz:-0.4, pierce:level});
+    // пуля знает свой уровень-пробой; скорость в юнитах/сек
+    bullets.push({ mesh:b, vx:0, vz:-BULLET_SPEED, pierce:level });
   });
 }
 
@@ -655,10 +663,11 @@ function showMsg(text){
 
 /* ---------- enemy AI ---------- */
 const DETECT_DISTANCE = 20;   // на каком расстоянии враг замечает игрока
-const ENEMY_SPEED     = 0.1; // базовая скорость врага
+// базовая скорость врага (юнитов/сек)
+const ENEMY_SPEED = 3;
 const difficultyFactor = 0.5;   // <-- крутите этим для сложности (0.5–2.0)
 
-function updateEnemiesAI(){
+function updateEnemiesAI(dt){
   enemies.forEach(e=>{
     const dist = e.position.distanceTo(nailGroup.position);
     if (dist < DETECT_DISTANCE){
@@ -670,7 +679,7 @@ function updateEnemiesAI(){
       dir.y = 0; // не летим вверх
       dir.z *= 0.2; // не летим вперёд
       // ускорение пропорционально difficultyFactor
-      e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor);
+      e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor * dt);
     }
   });
 }
@@ -694,6 +703,12 @@ function fadeOutGate(gate) {
 /* ---------- main loop ---------- */
 function animate(time){
   requestAnimationFrame(animate);
+
+  // считаем dt в секундах (кэпим, чтобы не было скачков)
+  if (!prevTime) prevTime = time;
+  const dt = Math.min(0.05, (time - prevTime) / 1000);
+  prevTime = time;
+
   if (!started || gameOver) return;
   // очистить старых врагов без uuid (защита от старых сохранений/кэша)
   enemies = enemies.filter(e => e.uuid);
@@ -701,10 +716,10 @@ function animate(time){
   /*  ✔  ИСПРАВЛЕНИЕ 1: всегда вызываем shoot  */
   shoot(time);
 
-  /* player movement */
-  nailGroup.position.x += (mouseX - nailGroup.position.x) * 0.1;
+  /* player movement (dt-based) */
+  nailGroup.position.x += (mouseX - nailGroup.position.x) * 5 * dt; // 5 — «инерция» бокового движения
   nailGroup.position.x = THREE.MathUtils.clamp(nailGroup.position.x, -3, 3);
-  nailGroup.position.z -= speed;
+  nailGroup.position.z -= playerSpeed * dt;
 
   /* сжатие у краёв + ограничение */
   const halfRoad   = 3 - 0.15;   // RUNWAY_WIDTH / 2 - 0.15
@@ -731,7 +746,7 @@ function animate(time){
     nail.rotation.z = THREE.MathUtils.clamp(tiltBase * factor, -0.4, 0.4);
   });
 
-  updateEnemiesAI();
+  updateEnemiesAI(dt);
   // ⚡ 4. Clean stale labels
   // enemyLabels = enemyLabels.filter(l => enemies.some(e => l.ids.includes(e.uuid)));
 
@@ -782,15 +797,16 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
     spawnWave();
   }
 
-  /* bullets */
+  /* bullets (dt-based) */
   for (let i = bullets.length - 1; i >= 0; i--){
     const b = bullets[i];
-    b.mesh.position.x += b.vx;
-    b.mesh.position.z += b.vz;
+    b.mesh.position.x += b.vx * dt;
+    b.mesh.position.z += b.vz * dt;
     if (b.mesh.position.z < nailGroup.position.z - fireRange){
       scene.remove(b.mesh); bullets.splice(i,1);
     }
   }
+
 
 /* bullet–enemy collision */
 for (let i = bullets.length - 1; i >= 0; i--){
@@ -972,6 +988,7 @@ for (let i = bullets.length - 1; i >= 0; i--){
   }
   updateRunway();
   
+  
   /* позиционируем баннер строго над центром толпы без наклона */
 bannerMesh.position.set(
   nailGroup.position.x,
@@ -979,6 +996,19 @@ bannerMesh.position.set(
   nailGroup.position.z
 );
 bannerMesh.rotation.copy(camera.rotation); // всегда смотрит в камеру (не наклоняется)
+
+  /* FPS counter */
+  if (!animate.lastFpsUpdate) animate.lastFpsUpdate = time;
+  if (!animate.frameCount) animate.frameCount = 0;
+  animate.frameCount++;
+
+  if (time - animate.lastFpsUpdate >= 1000) {
+    const fps = (animate.frameCount * 1000) / (time - animate.lastFpsUpdate);
+    document.getElementById('fps').textContent = fps.toFixed(0);
+    animate.frameCount = 0;
+    animate.lastFpsUpdate = time;
+  }
+
   renderer.render(scene,camera);
 }
 animate();
