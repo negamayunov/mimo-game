@@ -191,12 +191,13 @@ scene.add(dirLight);
 scene.add(new THREE.AmbientLight(0xffffff, 0.8)); // чуть усилим общий свет
 
 /* ---------- player ---------- */
-/*  NEW  */
-const nailBody = new THREE.ConeGeometry(0.08, 1.0, 12);
-const nailHead = new THREE.CylinderGeometry(0.18, 0.18, 0.15, 16);
-const playerMat = new THREE.MeshStandardMaterial({
-  color: 0xc0c0c0, metalness: 0.8, roughness: 0.2
+// легкие геометрии и материал для гвоздя (меньше полигонов + дешевый шейдер)
+const nailBody = new THREE.ConeGeometry(0.08, 1.0, 24); // 100 -> 24
+const nailHead = new THREE.CylinderGeometry(0.18, 0.18, 0.15, 12); // 16 -> 12
+const playerMat = new THREE.MeshLambertMaterial({
+  color: 0xc0c0c0
 });
+
 
 /* массив, куда будем складывать группы-гвозди */
 const nailGroup = new THREE.Group();   // на сцене только эта группа
@@ -296,8 +297,10 @@ rebuildNailFormation();   // создаём первий гвоздь
 const bulletGeo  = new THREE.SphereGeometry(0.08,8,8);
 const bigBulletGeo = new THREE.SphereGeometry(0.25,16,16);
 // ⚡ 2. Shared bullet materials
-const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
-const bigBulletMat = new THREE.MeshStandardMaterial({ color: 0xff8800 });
+// пули — простой материал без PBR (быстрее на GPU)
+const bulletMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+const bigBulletMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+
 
 const bullets = [];
 
@@ -362,7 +365,7 @@ heartGeo.scale(0.05, 0.05, 0.05); // 0.4 / 4 = 0.1, но ещё ×0.5 чтобы
 heartGeo.rotateZ(Math.PI);
 
 const enemyGeo = heartGeo;   // shared
-const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
+const enemyMat = new THREE.MeshLambertMaterial({ color: 0xff0040 });
 
 // --- ENEMY POOL ---
 const ENEMY_POOL_SIZE = 300;
@@ -459,8 +462,8 @@ const RUNWAY_LENGTH = 80;
 const EDGE_HEIGHT   = 0.2;
 const gateWidth = RUNWAY_WIDTH / 2;
 
-const runwayMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
-const edgeMat   = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
+const runwayMat = new THREE.MeshLambertMaterial({ color: 0xffffff, roughness: 0.8 });
+const edgeMat   = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
 
 /* геометрии остаются теми же */
 const stripGeo = new THREE.PlaneGeometry(RUNWAY_WIDTH, RUNWAY_LENGTH);
