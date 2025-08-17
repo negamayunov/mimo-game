@@ -213,6 +213,126 @@ const bannerMat = new THREE.MeshBasicMaterial({ map: bannerTex, transparent: tru
 const bannerGeo = new THREE.PlaneGeometry(0.8, 0.4);
 const bannerMesh = new THREE.Mesh(bannerGeo, bannerMat);
 
+// --- CanvasTexture cache & helpers ---
+// reuse canvas textures for gates and create reusable canvases for dynamic labels
+const canvasCache = new Map();
+
+function makeTextCanvas(w, h){
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  return { canvas, ctx };
+}
+
+// --- Cached gate panel materials ---
+const gatePanelMatPos = new THREE.MeshBasicMaterial({
+  color: 0x00ff00, transparent: true, opacity: 0.3, depthWrite: false
+});
+const gatePanelMatNeg = new THREE.MeshBasicMaterial({
+  color: 0xff0000, transparent: true, opacity: 0.3, depthWrite: false
+});
+
+
+function getGateTexture(label){
+  const key = 'gate:' + label;
+  if (canvasCache.has(key)) return canvasCache.get(key);
+
+  const { canvas, ctx } = makeTextCanvas(384, 256);
+  const [topText, bottomText] = label.includes(' ') ? label.split(' ', 2) : ['ГЕЙТ', label];
+
+  // draw once
+  ctx.fillStyle = '#000a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#ffffff';
+  ctx.textAlign = 'center';
+
+  ctx.font = 'bold 42px sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.fillText(topText, canvas.width / 2, 25);
+
+  ctx.font = 'bold 72px sans-serif';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(bottomText, canvas.width / 2, canvas.height * 0.55);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.needsUpdate = true;
+  canvasCache.set(key, tex);
+  return tex;
+}
+
+// helper for dynamic small labels (one-time create; ctx stored on mesh.userData)
+function makeLabelMesh(text, spawnZ){
+  const { canvas, ctx } = makeTextCanvas(128, 64);
+  ctx.fillStyle = '#000a';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 48px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, canvas.width/2, canvas.height/2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+  const geo = new THREE.PlaneGeometry(1, 0.5);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.position.set(0, 1.2, spawnZ);
+  // keep canvas + ctx for updates
+  mesh.userData.canvas = canvas;
+  mesh.userData.ctx = ctx;
+  mesh.userData.tex = tex;
+  return mesh;
+}
+
+// --- LABEL POOL (re-use dynamic wave labels) ---
+const LABEL_POOL_SIZE = 40;
+const labelPool = [];
+
+// инициализация пула (лениво — создаём пул заранее)
+for (let i = 0; i < LABEL_POOL_SIZE; i++){
+  const m = makeLabelMesh('0', 0);
+  m.userData.active = false;
+  m.visible = false;
+  labelPool.push(m);
+  // сразу не добавляем в сцену — makeLabelMesh уже добавлял; уберём его
+  scene.remove(m);
+}
+
+function acquireLabelMesh(text, spawnZ){
+  for (let i = 0; i < labelPool.length; i++){
+    const m = labelPool[i];
+    if (!m.userData.active){
+      m.userData.active = true;
+      m.visible = true;
+      m.position.set(0, 1.2, spawnZ);
+      // обновим текст
+      const canvas = m.userData.canvas;
+      const ctx = m.userData.ctx;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#000a';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 48px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2);
+      if (m.userData.tex) m.userData.tex.needsUpdate = true;
+      scene.add(m);
+      return m;
+    }
+  }
+  // fallback: если пул исчерпан — создаём новую метку (редкий случай)
+  const newM = makeLabelMesh(text, spawnZ);
+  newM.userData.active = true;
+  return newM;
+}
+
+function releaseLabelMesh(m){
+  // прячем и помечаем неактивной (не dispose)
+  m.userData.active = false;
+  m.visible = false;
+  scene.remove(m);
+}
+
 bannerMesh.position.set(0, 2.2, 0); // временная, будет обновляться в animate
 scene.add(bannerMesh);
 
@@ -255,7 +375,7 @@ function rebuildNailFormation(){
     // цвет для всего гвоздя (и стержня, и шляпки)
     const nailMat = playerMat.clone();
     const hue = 0.44 + (level - 1) * 0.8;  // 0 = серый, дальше идёт в зелёный / оранжевый
-    nailMat.color.setHSL(hue, 0.9, 0.8);
+    nailMat.color.setHSL(hue, 0.44, 0.44);
     body.material = nailMat;
     head.material = nailMat;
 
@@ -462,7 +582,7 @@ const RUNWAY_LENGTH = 80;
 const EDGE_HEIGHT   = 0.2;
 const gateWidth = RUNWAY_WIDTH / 2;
 
-const runwayMat = new THREE.MeshLambertMaterial({ color: 0xffffff, roughness: 0.8 });
+const runwayMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
 const edgeMat   = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
 
 /* геометрии остаются теми же */
@@ -527,14 +647,15 @@ function spawnGate(side, z, data){
     : data.val > 0;
 
     /* полупрозрачная панель новой ширины */
-    const panelMat = new THREE.MeshStandardMaterial({
-      color      : isPositive ? 0x00ff00 : 0xff0000,
-      transparent: true,
-      opacity    : 0.3
-    });
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(gateWidth, 2), panelMat);
+    // лёгкий материал для панели гейта
+    const panel = new THREE.Mesh(
+      new THREE.PlaneGeometry(gateWidth, 2),
+      isPositive ? gatePanelMatPos : gatePanelMatNeg
+    );
+
     panel.position.z = 0.01;
     gateGroup.add(panel);
+
 
     /* белая рамка */
     const edges = new THREE.LineSegments(
@@ -544,36 +665,15 @@ function spawnGate(side, z, data){
     edges.position.z = 0.02;
     gateGroup.add(edges);
 
-  /* ---------- текст-Canvas ---------- */
-    const canvas = document.createElement('canvas');
-    canvas.width  = 384;
-    canvas.height = 256;
-    const ctx = canvas.getContext('2d');
-
-    const [topText, bottomText] = data.label.includes(' ')
-  ? data.label.split(' ')
-  : ['ГЕЙТ', data.label];
-
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 384, 256);
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-
-    ctx.font = 'bold 42px sans-serif';
-    ctx.textBaseline = 'top';
-    ctx.fillText(topText, 192, 25);
-
-    ctx.font = 'bold 72px sans-serif';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(bottomText, 192, 140);
-
-
-    const tex = new THREE.CanvasTexture(canvas);
+    /* ---------- текст-Canvas (cached) ---------- */
+    const tex = getGateTexture(data.label);
     const textPlane = new THREE.Mesh(
-      new THREE.PlaneGeometry(gateWidth, 2),  // та же 3×2
+      new THREE.PlaneGeometry(gateWidth, 2),
       new THREE.MeshBasicMaterial({ map: tex, transparent: true })
     );
     textPlane.position.z = 0.03;
+    // for debugging/trace
+    textPlane.userData.gateLabel = data.label;
     gateGroup.add(textPlane);
 
     /* свечение */
@@ -619,27 +719,9 @@ function spawnWave(){
 // label – collect UUIDs while spawning this concrete batch
     let freshIds = [];
     if (crowdSize > 5) {
-      const canvas = document.createElement('canvas');
-    canvas.width = 128; canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 128, 64);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(crowdSize.toString(), 64, 32);
-
-    const tex = new THREE.CanvasTexture(canvas);
-    const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
-    const labelGeo = new THREE.PlaneGeometry(1, 0.5);
-    const labelMesh = new THREE.Mesh(labelGeo, labelMat); // Properly define mesh
-    labelMesh.position.set(0, 1.2, spawnZ); // Set Z position relative to spawnZ
-
-    scene.add(labelMesh);
-
-    // сохраняем UUID-список
-    enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
+      const labelMesh = acquireLabelMesh(crowdSize.toString(), spawnZ);
+      labelMesh.position.z = spawnZ;
+      enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
   }
 
   /* 3. спавним кучно */
@@ -773,21 +855,10 @@ function updateEnemiesAI(dt){
   });
 }
 
-function fadeOutGate(gate) {
-  const fadeMat = gate.children.find(c => c.material.transparent)?.material;
-  if (!fadeMat) { scene.remove(gate); return; }  // на всякий случай
-
-  let alpha = 1;
-  const fadeStep = 0.05;
-  const fadeInterval = setInterval(() => {
-    alpha -= fadeStep;
-    fadeMat.opacity = Math.max(0, alpha);
-    if (alpha <= 0) {
-      clearInterval(fadeInterval);
-      scene.remove(gate);
-    }
-  }, 16);   // ~60 fps
+function fadeOutGate(gateGroup){
+  gateGroup.userData.fade = { start: performance.now(), dur: 300 };
 }
+
 
 /* ---------- main loop ---------- */
 function animate(time){
@@ -849,10 +920,21 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
   );
 
   if (alive.length === 0) {
-    scene.remove(mesh);
+    // возвращаем метку в пул (если она из пула)
+    if (mesh.userData && mesh.userData.tex) {
+      releaseLabelMesh(mesh);
+    } else {
+      // на всякий случай — если была создана как fallback
+      scene.remove(mesh);
+      if (mesh.userData && mesh.userData.tex) mesh.userData.tex.dispose?.();
+      if (mesh.material && mesh.material.map) mesh.material.map.dispose?.();
+      mesh.material?.dispose?.();
+      mesh.geometry?.dispose?.();
+    }
     enemyLabels.splice(k, 1);
     continue;
   }
+
 
   const center = new THREE.Vector3();
   alive.forEach(e => center.add(e.position));
@@ -866,19 +948,24 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
 // );
 
   if (alive.length !== initial) {
-    const canvas = mesh.material.map.image;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, 128, 64);
-    ctx.fillStyle = '#000a';
-    ctx.fillRect(0, 0, 128, 64);
-    ctx.fillStyle = '#fff';
-    ctx.font = 'bold 48px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(alive.length.toString(), 64, 32);
-    mesh.material.map.needsUpdate = true;
-    enemyLabels[k].initial = alive.length;
+    const lblCanvas = mesh.userData.canvas;
+    const lblCtx = mesh.userData.ctx;
+    if (lblCtx && lblCanvas) {
+      lblCtx.clearRect(0, 0, lblCanvas.width, lblCanvas.height);
+      lblCtx.fillStyle = '#000a';
+      lblCtx.fillRect(0, 0, lblCanvas.width, lblCanvas.height);
+      lblCtx.fillStyle = '#fff';
+      lblCtx.font = 'bold 48px sans-serif';
+      lblCtx.textAlign = 'center';
+      lblCtx.textBaseline = 'middle';
+      lblCtx.fillText(alive.length.toString(), lblCanvas.width / 2, lblCanvas.height / 2);
+      // пометить texture как нуждающийся в обновлении
+      if (mesh.userData.tex) mesh.userData.tex.needsUpdate = true;
+      else if (mesh.material && mesh.material.map) mesh.material.map.needsUpdate = true;
+      enemyLabels[k].initial = alive.length;
+    }
   }
+
 }
 
   /* continuous spawning */
@@ -1121,6 +1208,25 @@ bannerMesh.rotation.copy(camera.rotation); // всегда смотрит в к�
     animate.frameCount = 0;
     animate.lastFpsUpdate = time;
   }
+
+  // --- handle gate fading ---
+  scene.traverse(obj => {
+    if (obj.userData && obj.userData.fade){
+      const { start, dur } = obj.userData.fade;
+      const t = (time - start) / dur;
+      if (t >= 1){
+        // удалить гейт окончательно
+        scene.remove(obj);
+        delete obj.userData.fade;
+      } else {
+        obj.traverse(child => {
+          if (child.material && child.material.transparent){
+            child.material.opacity = (1 - t) * 0.3;
+          }
+        });
+      }
+    }
+  });
 
   renderer.render(scene,camera);
 }
