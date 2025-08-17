@@ -192,7 +192,7 @@ scene.add(new THREE.AmbientLight(0xffffff, 0.8)); // чуть усилим об�
 
 /* ---------- player ---------- */
 /*  NEW  */
-const nailBody = new THREE.ConeGeometry(0.08, 1.0, 100);
+const nailBody = new THREE.ConeGeometry(0.08, 1.0, 12);
 const nailHead = new THREE.CylinderGeometry(0.18, 0.18, 0.15, 16);
 const playerMat = new THREE.MeshStandardMaterial({
   color: 0xc0c0c0, metalness: 0.8, roughness: 0.2
@@ -300,6 +300,43 @@ const bulletMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
 const bigBulletMat = new THREE.MeshStandardMaterial({ color: 0xff8800 });
 
 const bullets = [];
+
+// --- BULLET POOL ---
+const BULLET_POOL_SMALL = 120;
+const BULLET_POOL_BIG = 120;
+const bulletPoolSmall = [];
+const bulletPoolBig = [];
+
+function createBulletMesh(isBig){
+  const g = isBig ? bigBulletGeo : bulletGeo;
+  const m = new THREE.Mesh(g, isBig ? bigBulletMat : bulletMat);
+  m.visible = false;
+  m.userData.active = false;
+  scene.add(m);
+  return m;
+}
+for (let i = 0; i < BULLET_POOL_SMALL; i++) bulletPoolSmall.push(createBulletMesh(false));
+for (let i = 0; i < BULLET_POOL_BIG; i++) bulletPoolBig.push(createBulletMesh(true));
+
+function acquireBulletMesh(isBig){
+  const pool = isBig ? bulletPoolBig : bulletPoolSmall;
+  for (let i = 0; i < pool.length; i++){
+    const m = pool[i];
+    if (!m.userData.active){
+      m.userData.active = true;
+      m.visible = true;
+      m.rotation.set(0,0,0);
+      m.scale.set(1,1,1);
+      return m;
+    }
+  }
+  return null;
+}
+function releaseBulletMesh(m){
+  m.userData.active = false;
+  m.visible = false;
+}
+
 // скорость пуль в юнитах/сек (≈0.4 юн/кадр при 60fps → ~24 юн/сек)
 const BULLET_SPEED = 24;
 // храним время предыдущего кадра для расчёта dt
@@ -326,8 +363,41 @@ heartGeo.rotateZ(Math.PI);
 
 const enemyGeo = heartGeo;   // shared
 const enemyMat = new THREE.MeshStandardMaterial({ color: 0xff0040, roughness: 0.3, metalness: 0.2 });
+
+// --- ENEMY POOL ---
+const ENEMY_POOL_SIZE = 300;
+const enemyPool = [];
+function createEnemyMesh(){
+  const m = new THREE.Mesh(enemyGeo, enemyMat);
+  m.visible = false;
+  m.userData.active = false;
+  scene.add(m);
+  return m;
+}
+for (let i = 0; i < ENEMY_POOL_SIZE; i++) enemyPool.push(createEnemyMesh());
+
+function acquireEnemyMesh(){
+  for (let i = 0; i < enemyPool.length; i++){
+    const m = enemyPool[i];
+    if (!m.userData.active){
+      m.userData.active = true;
+      m.userData.pooled = true;
+      m.visible = true;
+      m.rotation.set(0,0,0);
+      m.scale.set(1,1,1);
+      return m;
+    }
+  }
+  return null;
+}
+function releaseEnemyMesh(m){
+  m.userData.active = false;
+  m.visible = false;
+}
+
 let enemies = [];
 let enemyLabels = []; // { group, mesh, initial }
+
 
 /* ---------- gates ---------- */
 const gateGeo = new THREE.BoxGeometry(2,2,0.2);
@@ -506,9 +576,9 @@ function spawnGate(side, z, data){
     /* свечение */
 
     const color = isPositive ? 0x00ff00 : 0xff0000;
-    const light = new THREE.PointLight(color, 1.2, 6);
-    light.position.set(0, 0.5, 0);
-    gateGroup.add(light);
+    // const light = new THREE.PointLight(color, 1.2, 6);
+    // light.position.set(0, 0.5, 0);
+    // gateGroup.add(light);
 
     const glowMat = new THREE.MeshBasicMaterial({
       color, transparent: true, opacity: 0.25, side: THREE.DoubleSide
@@ -570,20 +640,25 @@ function spawnWave(){
   }
 
   /* 3. спавним кучно */
-  for (let i = 0; i < crowdSize; i++){
-    const e = new THREE.Mesh(enemyGeo, enemyMat);
+ for (let i = 0; i < crowdSize; i++){
+    let e = acquireEnemyMesh();
+    if (!e){
+      // fallback — если пул исчерпан, создаём временно
+      e = new THREE.Mesh(enemyGeo, enemyMat);
+      e.userData.pooled = false;
+      scene.add(e);
+    }
     e.position.set(
       clampedClusterX + (Math.random()-0.5)*1.5,
-      0,
+      0.3,
       spawnZ + (Math.random()-0.5)*8
     );
-    e.uuid = THREE.MathUtils.generateUUID(); // ГЕНЕРИМ ДО
-    scene.add(e);
+    e.uuid = THREE.MathUtils.generateUUID();
     enemies.push(e);
     if (crowdSize > 5) freshIds.push(e.uuid);   // ← собираем ID только этой волны
-    e.position.y = 0.3;
     e.lookAt(nailGroup.position.x, 0.3, nailGroup.position.z);
   }
+
 
 /* ---------- gates (strict lane, same Z) ---------- */
 if (Math.random() < 0.7) {
@@ -640,17 +715,28 @@ function shoot(time){
     const geo = level >= 3 ? bigBulletGeo : bulletGeo;
     const mat = level >= 3 ? bigBulletMat : bulletMat;
 
-    const b = new THREE.Mesh(geo, mat);
+    const isBig = level >= 3;
+    let bMesh = acquireBulletMesh(isBig);
+
+    // fallback — если пул исчерпан, создаём временно (редкий случай)
+    if (!bMesh){
+      bMesh = new THREE.Mesh(geo, mat);
+      bMesh.userData.pooled = false;
+      scene.add(bMesh);
+    } else {
+      bMesh.userData.pooled = true;
+    }
+
     const nailPos = nail.position;
-    b.position.set(
+    bMesh.position.set(
       nailGroup.position.x + nailPos.x,
       0,
       nailGroup.position.z - 0.5
     );
-    scene.add(b);
+    bMesh.userData.pierce = level;
 
-    // пуля знает свой уровень-пробой; скорость в юнитах/сек
-    bullets.push({ mesh:b, vx:0, vz:-BULLET_SPEED, pierce:level });
+    bullets.push({mesh: bMesh, vx:0, vz:-BULLET_SPEED, pierce: level});
+
   });
 }
 
@@ -803,10 +889,14 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
     b.mesh.position.x += b.vx * dt;
     b.mesh.position.z += b.vz * dt;
     if (b.mesh.position.z < nailGroup.position.z - fireRange){
-      scene.remove(b.mesh); bullets.splice(i,1);
+      if (b.mesh.userData.pooled) {
+        releaseBulletMesh(b.mesh);
+      } else {
+        scene.remove(b.mesh);
+      }
+      bullets.splice(i,1);
     }
   }
-
 
 /* bullet–enemy collision */
 for (let i = bullets.length - 1; i >= 0; i--){
@@ -818,17 +908,27 @@ for (let i = bullets.length - 1; i >= 0; i--){
     const hitDist = 0.5;   // можно оставить фиксированным
 
     if (bMesh.position.distanceTo(e.position) < hitDist){
-      bData.pierce--;
+    bData.pierce--;
 
+    // release enemy
+    if (e.userData.pooled) {
+      releaseEnemyMesh(e);
+    } else {
       scene.remove(e);
-      enemies.splice(j, 1);
-
-      if (bData.pierce <= 0){
-        scene.remove(bMesh);
-        bullets.splice(i, 1);
-        break;              // пуля уничтожена – выходим из цикла по врагам
-      }
     }
+    enemies.splice(j, 1);
+
+    if (bData.pierce <= 0){
+      // release bullet
+      if (bMesh.userData.pooled) {
+        releaseBulletMesh(bMesh);
+      } else {
+        scene.remove(bMesh);
+      }
+      bullets.splice(i, 1);
+      break;
+    }
+  }
   }
 }
 
@@ -861,7 +961,12 @@ for (let i = bullets.length - 1; i >= 0; i--){
             return;
           }
         }
-        scene.remove(e); enemies.splice(j,1);
+        if (e.userData.pooled) {
+          releaseEnemyMesh(e);
+        } else {
+          scene.remove(e);
+        }
+        enemies.splice(j,1);
         break;   // одно сердце – один гвоздь
       }
     }
@@ -976,7 +1081,12 @@ for (let i = bullets.length - 1; i >= 0; i--){
   const behind = nailGroup.position.z + 10;  // порог удаления
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].position.z > behind) {
-      scene.remove(enemies[i]);
+      const en = enemies[i];
+      if (en.userData.pooled) {
+        releaseEnemyMesh(en);
+      } else {
+        scene.remove(en);
+      }
       enemies.splice(i, 1);
     }
   }
