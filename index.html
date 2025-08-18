@@ -372,32 +372,6 @@ function redistributePlayerLevelsFromTotal(total){
   }
 }
 
-function updateWallLabel(w){
-  // ожидаем, что при создании стенке мы сохранили userData.labelMesh (plane с canvas)
-  const lm = w.userData && w.userData.labelMesh;
-  if (!lm || !lm.userData || !lm.userData.ctx) return;
-  const ctx = lm.userData.ctx;
-  const canvas = lm.userData.canvas;
-  const tex = lm.userData.tex;
-  const val = Math.max(1, Math.round(w.userData.health || 1));
-
-  // минимальные отрисовки — очищаем и перерисуем текст
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  // легкий бэк
-  ctx.fillStyle = 'rgba(0,0,0,0.2)';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  // крупный шрифт, подгоняем размер под canvas.height
-  const fontSize = Math.floor(canvas.height * 0.5);
-  ctx.font = `bold ${fontSize}px sans-serif`;
-  ctx.fillText(String(val), canvas.width/2, canvas.height/2);
-
-  if (tex) tex.needsUpdate = true;
-}
-
 /* функция пересборки толпы */
 function rebuildNailFormation(){
   // удаляем старые меши
@@ -821,6 +795,37 @@ const SONG_LENGTH_SEC = 215;
 const FPS = 60;
 const levelLength = SONG_LENGTH_SEC * FPS;
 
+// ---- spawn spacing config ----
+// минимальный промежуток спавна в мировых юнитах.
+// Подбирай под игру; по умолчанию близко к предыдущему фиксированному 20.
+const MIN_SPAWN_GAP = 7;
+
+// возвращает случайный интервал = [MIN_SPAWN_GAP, 1.5 * MIN_SPAWN_GAP]
+function randSpawnGap(){
+  return MIN_SPAWN_GAP * (1 + Math.random() * 1.5);
+}
+
+// маленькая вспомогательная функция — выбор смещения от базового Z
+function randOffsetFromBase(){
+  return randSpawnGap();
+}
+
+// счётчик подряд выпавших волн с врагами
+let consecutiveEnemyWaves = 0;
+
+let consecutiveWallWaves = 0;
+let consecutiveGateWaves = 0;
+
+let lastWallConfig = null;
+let wallConfigRepeat = 0;
+
+let lastGateConfig = null;
+let gateConfigRepeat = 0;
+
+// если хочешь сделать правила более мягкими — меняй эти значения
+const MAX_CONSECUTIVE_ENEMY_WAVES = 2; // после 2 волн подряд третья разрешается с малой вероятностью
+const ENEMY_REPEAT_SMALL_CHANCE = 0.05; // вероятность третьей волны (5%)
+
 /* ---------- infinite runway ---------- */
 const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
 const RUNWAY_LENGTH = 80;
@@ -933,37 +938,32 @@ function releaseWallMesh(w){
 }
 
 // helper: update wall health text (optimized: only redraw when value changes)
-// helper: update wall health text (optimized: only redraw when value changes)
+// unified wall text updater — не рисует 0, всегда округляет, минимально перерисовывает
 function updateWallText(w){
-  const canvas = w.userData.canvas;
-  const ctx = w.userData.ctx;
-  const tex = w.userData.tex;
+  if (!w || !w.userData) return;
+  const canvas = w.userData.canvas || (w.userData.labelMesh && w.userData.labelMesh.userData && w.userData.labelMesh.userData.canvas);
+  const ctx = w.userData.ctx || (w.userData.labelMesh && w.userData.labelMesh.userData && w.userData.labelMesh.userData.ctx);
+  const tex = w.userData.tex || (w.userData.labelMesh && w.userData.labelMesh.userData && w.userData.labelMesh.userData.tex);
+  if (!canvas || !ctx) return;
 
-  // всегда округляем health, но не отображаем 0 — если health <= 0, caller должен удалить стенку
-  const hpRaw = w.userData.health;
-  if (hpRaw <= 0) return; // не рисуем 0 — удаление/замена должна происходить сразу
+  // round health and handle zero: don't draw 0 (caller handles removal)
+  const rawHp = w.userData.health || 0;
+  if (rawHp <= 0) return;
+  const hp = Math.max(1, Math.round(rawHp));
 
-  const hp = Math.max(1, Math.round(hpRaw)); // минимум 1 при отображении
-
-  // clear
   ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  // translucent background for readability
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
   ctx.fillRect(0,0,canvas.width,canvas.height);
 
+  // fit large text to canvas
   const txt = String(hp);
-
-  // адаптивный размер шрифта: подгадать под ширину и высоту
-  let fontSize = Math.floor(canvas.height * 0.6); // стартуем от 60% высоты канваса
+  let fontSize = Math.floor(canvas.height * 0.6);
   ctx.font = `bold ${fontSize}px sans-serif`;
-  // подстраиваем по ширине и высоте
   while ((ctx.measureText(txt).width > canvas.width * 0.92 || fontSize > canvas.height * 0.9) && fontSize > 12){
     fontSize = Math.floor(fontSize * 0.85);
     ctx.font = `bold ${fontSize}px sans-serif`;
   }
 
-  // draw with subtle stroke for legibility
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineWidth = Math.max(2, Math.floor(fontSize / 20));
@@ -1030,28 +1030,25 @@ function updateRunway(){
   }
 }
 
-// ---- REPLACE spawnGate implementation with this block ----
 function spawnGate(side, z, data, widthOverride){
+  // unified spawnGate: supports optional widthOverride (for walls -> gate)
   const gateGroup = new THREE.Group();
-  gateGroup.userData = data;
+  gateGroup.userData = data || {};
 
-  const isPositive = (data.mode === 'mul') ? data.val > 1 : data.val > 0;
+  const isPositive = (data && data.mode === 'mul') ? data.val > 1 : (data && data.val > 0);
 
-  // actual gate width (можно передать нестандартную ширину при спавне, напр. при разрушении стен)
+  // gate width (world units)
   const gw = (typeof widthOverride === 'number') ? widthOverride : gateWidth;
 
-  /* полупрозрачная панель */
-  const panelMat = new THREE.MeshBasicMaterial({
-    color      : isPositive ? 0x00ff00 : 0xff0000,
-    transparent: true,
-    opacity    : 0.3,
-    depthWrite : false
+  // panel
+  const panelMat = (isPositive ? gatePanelMatPos : gatePanelMatNeg) || new THREE.MeshBasicMaterial({
+    color: isPositive ? 0x00ff00 : 0xff0000, transparent: true, opacity: 0.3, depthWrite: false
   });
   const panel = new THREE.Mesh(new THREE.PlaneGeometry(gw, 2), panelMat);
   panel.position.z = 0.01;
   gateGroup.add(panel);
 
-  /* белая рамка */
+  // frame
   const edges = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.PlaneGeometry(gw, 2)),
     new THREE.LineBasicMaterial({ color: 0xffffff })
@@ -1059,207 +1056,245 @@ function spawnGate(side, z, data, widthOverride){
   edges.position.z = 0.02;
   gateGroup.add(edges);
 
-  /* ---------- текст (cached CanvasTexture) ---------- */
-  // используем кэшированную функцию — экономит создание canvas каждый раз
-  const tex = getGateTexture(data.label);
-  // tex.image — это canvas, содержащий реальный размер
-  const canvas = (tex && tex.image) ? tex.image : null;
-  let texAspect = 384 / 256; // fallback (исходный размер)
-  if (canvas && canvas.width && canvas.height) texAspect = canvas.width / canvas.height;
+  // TEXT: use cached CanvasTexture
+  const tex = getGateTexture((data && data.label) ? data.label : '');
+  let texAspect = 384 / 256;
+  if (tex && tex.image && tex.image.width && tex.image.height) texAspect = tex.image.width / tex.image.height;
 
-  const baseHeight = 2; // стандартная высота текста (в world units)
-  // ширина текста при baseHeight
-  let textW = baseHeight * texAspect;
+  // compute text plane size preserving texture aspect; max height 2
+  const baseHeight = 1.6; // slightly smaller than panel to leave margins
   let textH = baseHeight;
-
-  // если текст в базовой высоте оказался шире, чем доступная ширина — уменьшаем высоту, чтобы сохранить aspect
-  if (textW > gw) {
-    textW = gw;
+  let textW = textH * texAspect;
+  if (textW > gw * 0.95) { // if too wide, shrink height
+    textW = gw * 0.95;
     textH = textW / texAspect;
   }
 
-  const textPlane = new THREE.Mesh(
-    new THREE.PlaneGeometry(textW, textH),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true })
-  );
+  const textMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true });
+  const textPlane = new THREE.Mesh(new THREE.PlaneGeometry(textW, textH), textMat);
   textPlane.position.z = 0.03;
-  // вертикально центрируем текст по панели
-  textPlane.position.y = 0;
-  // сохраняем метки для дебага / тестирования
-  textPlane.userData.gateLabel = data.label;
+  textPlane.position.y = 0; // centered vertically
   gateGroup.add(textPlane);
 
-  /* лёгкий эффект glow (экономично) */
+  // glow (cheap)
   const glowMat = new THREE.MeshBasicMaterial({
-    color: isPositive ? 0x00ff00 : 0xff0000, transparent: true, opacity: 0.2, side: THREE.DoubleSide
+    color: isPositive ? 0x00ff00 : 0xff0000, transparent: true, opacity: 0.18, side: THREE.DoubleSide
   });
   const glowPlane = new THREE.Mesh(new THREE.PlaneGeometry(gw + 0.2, Math.max(2.2, textH + 0.2)), glowMat);
   glowPlane.position.z = -0.05;
   gateGroup.add(glowPlane);
 
-  /* позиция: ровно по краю полосы */
-  gateGroup.position.set(side * (RUNWAY_WIDTH / 4), 0, z);
+  // position: align edge to runway edge for side -1/+1, center for 0.
+  let gateX = 0;
+  if (side === 0) gateX = 0;
+  else if (side < 0) gateX = - (RUNWAY_WIDTH / 2) + (gw / 2);
+  else gateX = (RUNWAY_WIDTH / 2) - (gw / 2);
+
+  gateGroup.position.set(gateX, 0, z);
   scene.add(gateGroup);
   gates.push(gateGroup);
+
+  return gateGroup;
 }
 
-function spawnWave(){
-  /* 1. мощность и кол-во */
-  // общее количество "пуль за выстрел" = сумма уровней всех гвоздей
+function spawnEnemyGroup(baseSpawnZ) {
+  const freshIds = [];
   const bulletCount = nailLevels.reduce((a, b) => a + b, 0);
-
-  const power = Math.min(1, (fireRate - 0.5)/4 + (bulletCount - 1)/10);
+  const power = Math.min(1, (fireRate - 0.5) / 4 + (bulletCount - 1) / 10);
   const crowdSize = 3 + Math.floor(power * power * 100 * difficultyFactor);
 
-  /* 2. выбираем сторону кластера */
-  const side     = Math.random() < 0.5 ? -1 : 1; // -1 = лево, +1 = право
+  const side = Math.random() < 0.5 ? -1 : 1;
   const clusterX = side * (1 + Math.random() * 2);
-  const clampedClusterX = THREE.MathUtils.clamp(clusterX, -2.5, 2.5); // не выходит за бортики
-  const spawnZ   = lastSpawnZ - 20;
-  /* ————————  ОДНА СТРОКА  ———————— */
-  if (spawnZ > nailGroup.position.z + 20) return; // не создаём, если за спиной
-  
+  const clampedClusterX = THREE.MathUtils.clamp(clusterX, -2.5, 2.5);
 
-  lastSpawnZ = spawnZ;
-
-// label – collect UUIDs while spawning this concrete batch
-    let freshIds = [];
-    if (crowdSize > 5) {
-      const labelMesh = acquireLabelMesh(crowdSize.toString(), spawnZ);
-      labelMesh.position.z = spawnZ;
-      enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
+  if (crowdSize > 5) {
+    const labelMesh = acquireLabelMesh(crowdSize.toString(), baseSpawnZ);
+    labelMesh.position.z = baseSpawnZ;
+    enemyLabels.push({ ids: freshIds, mesh: labelMesh, initial: crowdSize });
   }
 
-  /* 3. спавним кучно */
- for (let i = 0; i < crowdSize; i++){
+  for (let i = 0; i < crowdSize; i++) {
     let e = acquireEnemyMesh();
-    if (!e){
-      // fallback — если пул исчерпан, создаём временно
+    if (!e) {
       e = new THREE.Mesh(enemyGeo, enemyMat);
       e.userData.pooled = false;
       scene.add(e);
     }
     e.position.set(
-      clampedClusterX + (Math.random()-0.5)*1.5,
+      clampedClusterX + (Math.random() - 0.5) * 1.5,
       0.3,
-      spawnZ + (Math.random()-0.5)*8
+      baseSpawnZ + (Math.random() - 0.5) * 4
     );
     e.uuid = THREE.MathUtils.generateUUID();
     enemies.push(e);
-    if (crowdSize > 5) freshIds.push(e.uuid);   // ← собираем ID только этой волны
+    if (crowdSize > 5) freshIds.push(e.uuid);
     e.lookAt(nailGroup.position.x, 0.3, nailGroup.position.z);
   }
+}
 
+function spawnWallAt(sideWall, zPos) {
+  const w = acquireWallMesh();
+  let xCenter = 0;
 
-/* ---------- gates (strict lane, same Z) ---------- */
-if (Math.random() < 0.7) {
-
-  // const gateWidth = RUNWAY_WIDTH / 2;
-  const sides = Math.random() < 0.6
-    ? [Math.random() < 0.5 ? -1 : 1]   // один гейт: лево или право
-    : [-1, 1];                         // два гейта: одновременно
-
-  const spawnZGate = spawnZ + Math.random() * 10;
-
-  if (sides.length === 1) {
-    const g = pickGate();
-    // обновляем внутренние лучшие параметры (только если гейт положительный)
-    handleSingleGateForMaxParams(g);
-    // визуально спавним гейт как раньше
-    spawnGate(sides[0], spawnZGate, g);
+  if (sideWall === 0) {
+    xCenter = 0;
+  } else if (sideWall < 0) {
+    xCenter = -(RUNWAY_WIDTH / 2) + (WALL_WIDTH / 2);
   } else {
-    // два разных гейта
-    let g1 = pickGate();
-    let g2;
-    do { g2 = pickGate(); } while (g2.label === g1.label);
-
-    // выбираем лучший гейт для внутреннего учёта (по ΔDamage и правилам)
-    handlePairGateForMaxParams(g1, g2);
-
-    // визуально спавним оба гейта (игровая логика не применяет их автоматически)
-    spawnGate(sides[0], spawnZGate, g1);
-    spawnGate(sides[1], spawnZGate, g2);
+    xCenter = (RUNWAY_WIDTH / 2) - (WALL_WIDTH / 2);
   }
 
-    // --- optional walls spawn (alongside gates) ---
-    // шанс появления стенки(ок) на этой волне
-    if (Math.random() < 0.35) { // вероятность спавна стен (регулируй)
-      // возможные позиции: -1 (left), 0 (center), 1 (right)
-      // patterns: single [-1|0|1] OR pairs [-1,0], [0,1], [-1,1]
-      const pairRoll = Math.random() < 0.4; // 40% шанс пары
-      let sidesWalls = [];
-      if (!pairRoll) {
-        const pos = [-1, 0, 1][Math.floor(Math.random() * 3)];
-        sidesWalls = [pos];
-      } else {
-        // choose one of allowed pairs
-        const pairs = [[-1,0],[0,1],[-1,1]];
-        sidesWalls = pairs[Math.floor(Math.random() * pairs.length)];
-      }
+  w.position.set(xCenter, 0, zPos);
+  w.userData.side = sideWall;
+  w.userData.z = zPos;
 
-      // ensure not spawning walls where gates already spawned? (we allow co-existence)
+  // --- расчёт здоровья ---
+  const curDamage = Math.max(0, Math.round(
+    calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })
+  ));
+  const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
+  const mean = (curDamage + bestDamage) / 2;
 
-      // determine spawnZ for walls (use similar z)
-      const spawnZWall = spawnZ + Math.random() * 10;
+  let health;
+  let unbreak = false;
+  if (Math.random() < 0.25 && !walls.some(wall => wall.userData.unbreakable && Math.abs(wall.position.z - zPos) < 10)) {
+    // одна непробиваемая рядом
+    const mul = 1.5 + Math.random() * (3 - 1.5);
+    health = Math.max(5 + Math.random() * 4, mean * mul);
+    unbreak = true;
+  } else {
+    const mul = 0.4 + Math.random() * (0.7 - 0.4);
+    health = Math.max(5 + Math.random() * 4, mean * mul);
+  }
 
-      // compute damages for health calc
-      const curDamage = Math.max(0, Math.round(calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })));
-      const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
+  w.userData.health = health;
+  w.userData.maxHealth = health;
+  w.userData.unbreakable = !!unbreak;
 
-      // track if we already created an "unbreakable" among pair (rule: not two unbreakable at same Z)
-      let haveUnbreakable = false;
+  updateWallText(w);
+  scene.add(w);
+  walls.push(w);
 
-      sidesWalls.forEach(sideWall => {
-        const w = acquireWallMesh();
-        // position
-        // compute center x so that wall edge aligns with runway edge for side -1/+1, center for 0
-        let xCenter = 0;
-        if (sideWall === 0) {
-          xCenter = 0;
-        } else if (sideWall < 0) { // left
-          xCenter = - (RUNWAY_WIDTH / 2) + (WALL_WIDTH / 2);
-        } else { // right
-          xCenter = (RUNWAY_WIDTH / 2) - (WALL_WIDTH / 2);
-        }
-        w.position.set(xCenter, 0, spawnZWall);
-        w.userData.side = sideWall;
-        w.userData.z = spawnZWall;
-
-        // health calc
-        const mean = (curDamage + bestDamage) / 2;
-        const r = Math.random();
-        let health;
-        let unbreak = false;
-        if (Math.random() < 0.25) {
-          // rare: heavy/unbreakable
-          // ensure not two unbreakable at same z
-          if (!haveUnbreakable) {
-            const mul = 1.5 + Math.random() * (3 - 1.5);
-            health = Math.max(1, mean * mul);
-            unbreak = true; haveUnbreakable = true;
-          } else {
-            // fallback to normal range to avoid two unbreakables
-            const mul = 0.4 + Math.random() * (0.7 - 0.4);
-            health = Math.max(1, mean * mul);
-          }
-        } else {
-          const mul = 0.4 + Math.random() * (0.7 - 0.4);
-          health = Math.max(1, mean * mul);
-        }
-
-        w.userData.health = health;
-        w.userData.maxHealth = health;
-        w.userData.unbreakable = !!unbreak;
-
-        // draw initial hp text
-        updateWallText(w);
-
-        // add to scene and register
-        scene.add(w);
-        walls.push(w);
-      });
-    }
+  return w;
 }
+
+
+function spawnWave() {
+  const gap = (typeof randSpawnGap === 'function') ? randSpawnGap() : (MIN_SPAWN_GAP * (1 + Math.random() * 0.5));
+  const baseSpawnZ = lastSpawnZ - gap;
+  if (baseSpawnZ > nailGroup.position.z + 20) return;
+
+  let waveType;
+  const roll = Math.random();
+
+  // ---- ВЫБОР ТИПА ВОЛНЫ ----
+  if (consecutiveEnemyWaves >= MAX_CONSECUTIVE_ENEMY_WAVES) {
+    // враги заблокированы
+    if (roll < 0.5) waveType = "gate";
+    else waveType = "wall";
+  } else {
+    if (roll < 0.5) waveType = "enemy";
+    else if (roll < 0.8) waveType = "gate";
+    else waveType = "wall";
+  }
+
+  // Ограничения на подряд стены
+  if (waveType === "wall") {
+    consecutiveEnemyWaves = 0;
+    consecutiveGateWaves = 0;
+    consecutiveWallWaves++;
+    if (consecutiveWallWaves > 1) {
+      const chance = (consecutiveWallWaves === 2 ? 0.3 : 0.1);
+      if (Math.random() > chance) waveType = "enemy"; // переброс в врагов
+    }
+  }
+
+  // Ограничения на подряд гейты
+  if (waveType === "gate") {
+    consecutiveEnemyWaves = 0;
+    consecutiveWallWaves = 0;
+    consecutiveGateWaves++;
+    if (consecutiveGateWaves > 1) {
+      const chance = (consecutiveGateWaves === 2 ? 0.3 : 0.1);
+      if (Math.random() > chance) waveType = "enemy"; // переброс в врагов
+    }
+  }
+
+  // ---- СПАВН ВРАГОВ ----
+  if (waveType === "enemy") {
+    spawnEnemyGroup(baseSpawnZ);
+    consecutiveEnemyWaves++;
+    consecutiveGateWaves = 0;
+    consecutiveWallWaves = 0;
+  }
+
+  // ---- СПАВН ГЕЙТОВ ----
+  else if (waveType === "gate") {
+    let sides = Math.random() < 0.6 ? [Math.random() < 0.5 ? -1 : 1] : [-1, 1];
+    const configKey = "gate-" + sides.join(",");
+    if (configKey === lastGateConfig) {
+      gateConfigRepeat++;
+      if (gateConfigRepeat >= 2) {
+        // принудительно меняем конфигурацию
+        sides = (sides.length === 1) ? [-1, 1] : [Math.random() < 0.5 ? -1 : 1];
+        gateConfigRepeat = 0;
+      }
+    } else {
+      lastGateConfig = configKey;
+      gateConfigRepeat = 0;
+    }
+
+    if (sides.length === 1) {
+      const g = pickGate();
+      handleSingleGateForMaxParams(g);
+      spawnGate(sides[0], baseSpawnZ, g);
+    } else {
+      let g = pickGate();
+      let g2;
+      do { g2 = pickGate(); } while (g2.label === g.label);
+      handlePairGateForMaxParams(g, g2);
+      spawnGate(sides[0], baseSpawnZ, g);
+      spawnGate(sides[1], baseSpawnZ, g2);
+    }
+
+    // шанс врагов вместе
+    if (Math.random() < 0.2) {
+      spawnEnemyGroup(baseSpawnZ - 4);
+    }
+  }
+
+  // ---- СПАВН СТЕН ----
+  else if (waveType === "wall") {
+    let sidesWalls;
+    if (Math.random() < 0.6) {
+      sidesWalls = [ [-1, 0, 1][Math.floor(Math.random() * 3)] ];
+    } else {
+      const pairs = [[-1, 0], [0, 1], [-1, 1]];
+      sidesWalls = pairs[Math.floor(Math.random() * pairs.length)];
+    }
+    const configKey = "wall-" + sidesWalls.join(",");
+    if (configKey === lastWallConfig) {
+      wallConfigRepeat++;
+      if (wallConfigRepeat >= 2) {
+        // принудительно меняем конфигурацию
+        sidesWalls = [ [-1,0,1][Math.floor(Math.random() * 3)] ];
+        wallConfigRepeat = 0;
+      }
+    } else {
+      lastWallConfig = configKey;
+      wallConfigRepeat = 0;
+    }
+
+    for (let s = 0; s < sidesWalls.length; s++) {
+      spawnWallAt(sidesWalls[s], baseSpawnZ);
+    }
+
+    // шанс врагов вместе
+    if (Math.random() < 0.2) {
+      spawnEnemyGroup(baseSpawnZ - 4);
+    }
+  }
+  lastSpawnZ = baseSpawnZ;
 }
 
 /* ---------- controls ---------- */
@@ -1510,11 +1545,12 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
           else if (r < 0.95) gateData = { label: 'СТРЕЛЬБА +0.5', action: 'rate', val: 0.5 };
           else gateData = { label: 'ГВОЗДИ +2', action: 'count', val: 2 };
 
-          // spawn gate with width equal WALL_WIDTH at the exact wall center
+          // spawn gate with width equal WALL_WIDTH
           spawnGate(w.userData.side, w.userData.z, gateData, WALL_WIDTH);
 
+          // ensure the internal "best params" are updated for this new gate
           if (typeof handleSingleGateForMaxParams === 'function') {
-            handleSingleGateForMaxParams(gateData);
+            try { handleSingleGateForMaxParams(gateData); } catch (err) { console.warn('handleSingleGateForMaxParams failed', err); }
           }
 
           // remove wall (return to pool)
@@ -1696,61 +1732,149 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
     }
   });
 
-  /* ---------- player–wall collision (симметричный урон) ---------- */
-  if (typeof walls !== 'undefined' && walls.length){
-    for (let wi = walls.length - 1; wi >= 0; wi--){
-      const w = walls[wi];
-      // проверяем касание любым гвоздём (тот же логический радиус что и для гейтов)
-      let touched = false;
-      for (const nail of nailGroup.children){
-        const dx = nailGroup.position.x + nail.position.x - w.position.x;
-        const dz = nailGroup.position.z - w.position.z;
-        if (Math.sqrt(dx*dx + dz*dz) < 1.5){
-          touched = true;
-          break;
-        }
+/* ---------- player–wall collision (симметричный урон) — исправленная версия ---------- */
+/* Поведение:
+   - для каждого wall собираем все индексы гвоздей, которые в контакте;
+   - для каждого гвоздя dmg = round(abs(wallHP - nailLevel));
+   - стенка получает суммарный урон = сумма всех dmg_i;
+   - каждый гвоздь получает только свой dmg_i:
+       - если dmg_i >= level -> гвоздь уничтожается
+       - иначе level -= dmg_i (целочисленно)
+   - после применения: если стенка разрушена -> spawn gate, обновить maxParams, вернуть wall в пул
+   - если у игрока не осталось гвоздей -> Game Over
+*/
+const COLLIDE_DISTANCE = 1.5; // порог детекции (можно подогнать)
+
+if (Array.isArray(walls) && walls.length) {
+  for (let wi = walls.length - 1; wi >= 0; wi--) {
+    const w = walls[wi];
+    if (!w || !w.userData || !w.userData.active) continue;
+
+    // собираем индексы гвоздей, которые "пересекаются" со стеной (простая AABB/X+Z проверка)
+    const collidingIndices = [];
+    for (let ni = 0; ni < nailGroup.children.length; ni++) {
+      const nailMesh = nailGroup.children[ni];
+      const nailWorldX = nailGroup.position.x + (nailMesh.position.x || 0);
+      const nailWorldZ = nailGroup.position.z + (nailMesh.position.z || 0);
+      const dx = Math.abs(nailWorldX - w.position.x);
+      const dz = Math.abs(nailWorldZ - w.position.z);
+
+      // проверяем попадание по ширине стенки и по Z (допуск по глубине)
+      if (dx <= (WALL_WIDTH / 2) && dz <= COLLIDE_DISTANCE) {
+        collidingIndices.push(ni);
       }
-      if (!touched) continue;
-
-      // симуляция одновременного урона
-      const wallHP = Math.max(0, w.userData.health || 0);
-      const playerTotal = nailLevels.reduce((a,b)=>a+b,0);
-
-      // стенка получает весь суммарный урон игрока (sumLevels)
-      const wallAfter = wallHP - playerTotal;
-
-      // игрок теряет уровни, равные жизни стенки (до 0)
-      const playerAfter = Math.max(0, playerTotal - wallHP);
-
-      // применяем изменения
-      w.userData.health = wallAfter;
-      updateWallLabel(w);
-
-      // если стенка разрушена — убрать и породить гейт (ширина = 1/3 дорожки)
-      if (wallAfter <= 0){
-        // удаление стенки визуально
-        if (w.userData.labelMesh) {
-          scene.remove(w.userData.labelMesh);
-        }
-        scene.remove(w);
-        walls.splice(wi, 1);
-
-        // спавним гейт с уменьшенной шириной (1/3 дорожки)
-        const gateData = pickGate();
-        spawnGate(w.userData.side || 0, w.userData.z || nailGroup.position.z, gateData, RUNWAY_WIDTH / 3);
-
-        // обновляем лучшие параметры от гейта, который появился из стены
-        if (typeof handleSingleGateForMaxParams === 'function'){
-          handleSingleGateForMaxParams(gateData);
-        }
-      }
-
-      // перераспределяем уровни игрока по новому total
-      redistributePlayerLevelsFromTotal(playerAfter);
-      rebuildNailFormation();
     }
-  }
 
+    if (collidingIndices.length === 0) continue;
+
+    // текущее HP стены (не округляем заранее)
+    const wHP = (typeof w.userData.health === 'number') ? w.userData.health : 0;
+    if (wHP <= 0) {
+      // на всякий случай — корректно убрать стенку из поля
+      releaseWallMesh(w);
+      walls.splice(wi, 1);
+      continue;
+    }
+
+    // вычисляем урон от каждого гвоздя (целочисленно)
+    const dmgEntries = collidingIndices.map(idx => {
+      const lvl = (nailLevels[idx] !== undefined) ? nailLevels[idx] : 1;
+      const dmgInt = Math.min(Math.max(0, Math.round(wHP)), Math.max(0, Math.round(lvl)));
+      return { index: idx, level: lvl, dmg: dmgInt };
+    });
+
+    const totalWallDamage = dmgEntries.reduce((s, e) => s + e.dmg, 0);
+
+    // применяем урон к стенке
+    w.userData.health = w.userData.health - totalWallDamage;
+
+    // обработка разрушения стены
+    if (w.userData.health <= 0) {
+      // spawn gate with width equal WALL_WIDTH at wall center
+      const r = Math.random();
+      let gateData;
+      if (r < 0.40) gateData = { label: 'УРОВЕНЬ +1', action: 'level', val: 1 };
+      else if (r < 0.65) gateData = { label: 'ГВОЗДИ +1', action: 'count', val: 1 };
+      else if (r < 0.80) gateData = { label: 'ДАЛЬНОСТЬ +1', action: 'range', val: 1 };
+      else if (r < 0.95) gateData = { label: 'СТРЕЛЬБА +0.5', action: 'rate', val: 0.5 };
+      else gateData = { label: 'ГВОЗДИ +2', action: 'count', val: 2 };
+
+      spawnGate(w.userData.side || 0, w.userData.z || nailGroup.position.z, gateData, WALL_WIDTH);
+
+      // обновляем внутренние лучшие параметры
+      if (typeof handleSingleGateForMaxParams === 'function') {
+        try { handleSingleGateForMaxParams(gateData); } catch (err) { console.warn('handleSingleGateForMaxParams failed', err); }
+      }
+
+      // удаляем стенку корректно
+      releaseWallMesh(w);
+      walls.splice(wi, 1);
+    } else {
+      // обновляем текст на стенке (если осталась)
+      updateWallText(w);
+    }
+
+    // применяем урон к гвоздям (новая копия уровней)
+    let newLevels = nailLevels.slice();
+    const indicesToRemove = [];
+
+    dmgEntries.forEach(entry => {
+      const i = entry.index;
+      const lvl = entry.level;
+      const dmg = entry.dmg;
+
+      if (dmg >= lvl) {
+        indicesToRemove.push(i);
+      } else if (dmg > 0) {
+        // уменьшаем уровень; округляем вниз (целые уровни)
+        newLevels[i] = Math.max(1, lvl - dmg);
+      }
+      // если dmg == 0 — ничего не делаем
+    });
+
+    if (indicesToRemove.length > 0) {
+      // удаляем индексы в порядке убывания (чтобы не смещать индексацию)
+      indicesToRemove.sort((a, b) => b - a);
+      for (const rem of indicesToRemove) {
+        if (rem >= 0 && rem < newLevels.length) newLevels.splice(rem, 1);
+      }
+    }
+
+    // очищаем нулевые/пустые уровни (на всякий случай)
+    for (let k = newLevels.length - 1; k >= 0; k--) {
+      if (!newLevels[k] || newLevels[k] <= 0) newLevels.splice(k, 1);
+    }
+
+    // если после ударов не осталось гвоздей — Game Over
+    if (newLevels.length === 0) {
+      nailLevels = [];
+      nailCount = 0;
+      rebuildNailFormation();
+      // обновление UI
+      document.getElementById('count').textContent = nailCount;
+      document.getElementById('levels').textContent = 0;
+      document.getElementById('rate').textContent = fireRate.toFixed(1);
+      document.getElementById('range').textContent = fireRange.toFixed(1);
+
+      gameOver = true;
+      showMsg('Game Over!');
+      return;
+    }
+
+    // применяем обновлённые уровни
+    nailLevels = newLevels.slice();
+    nailCount = Math.max(1, nailLevels.length);
+    rebuildNailFormation();
+
+    // обновим UI счётчики (чтобы значение было синхронизировано в этом кадре)
+    const countEl = document.getElementById('count');
+    const levelsEl = document.getElementById('levels');
+    if (countEl) countEl.textContent = nailCount;
+    if (levelsEl) levelsEl.textContent = nailLevels.reduce((a,b)=>a+b,0);
+  } // end walls loop
+} // end walls exist check
+
+/* ---------- end of player–wall collision ---------- */
 
   /* win condition по реальному времени */
   const elapsedSec = (performance.now() - songStartTime) / 1000;
@@ -1838,24 +1962,52 @@ bannerMesh.rotation.copy(camera.rotation); // всегда смотрит в к�
     animate.lastFpsUpdate = time;
   }
 
-  // --- handle gate fading ---
-  scene.traverse(obj => {
-    if (obj.userData && obj.userData.fade){
-      const { start, dur } = obj.userData.fade;
-      const t = (time - start) / dur;
-      if (t >= 1){
-        // удалить гейт окончательно
-        scene.remove(obj);
-        delete obj.userData.fade;
-      } else {
-        obj.traverse(child => {
-          if (child.material && child.material.transparent){
-            child.material.opacity = (1 - t) * 0.3;
-          }
-        });
+    // --- handle gate fading (safer: collect first, then process) ---
+    try {
+      const fading = [];
+      scene.traverse(o => {
+        if (o && o.userData && o.userData.fade) fading.push(o);
+      });
+
+      for (let k = 0; k < fading.length; k++) {
+        const obj = fading[k];
+        // defensive checks
+        if (!obj) continue;
+        if (!obj.userData) continue;
+        const f = obj.userData.fade;
+        if (!f) continue;
+        const start = f.start || 0;
+        const dur = f.dur || 1;
+        const t = (time - start) / dur;
+
+        if (t >= 1) {
+          // remove object safely (it may already be removed)
+          if (obj.parent) obj.parent.remove(obj);
+          else scene.remove(obj);
+          // tidy up userData
+          try { delete obj.userData.fade; } catch(e){}
+          continue;
+        }
+
+        // update opacity on all child meshes that have transparent materials
+        if (typeof obj.traverse === 'function') {
+          obj.traverse(child => {
+            if (!child) return;
+            const mat = child.material;
+            if (!mat) return;
+            // material can be array or single
+            if (Array.isArray(mat)) {
+              for (const m of mat) if (m && m.transparent) m.opacity = (1 - t) * 0.3;
+            } else {
+              if (mat.transparent) mat.opacity = (1 - t) * 0.3;
+            }
+          });
+        }
       }
+    } catch (err) {
+      // fail-safe: log once without breaking the loop
+      console.warn('Fade handler error:', err);
     }
-  });
 
   renderer.render(scene,camera);
 }
