@@ -72,7 +72,26 @@ canvas{display:block}
   top:50%;
   transform:translateY(-50%);
 }
-
+/* --- Scoreboard (top center) --- */
+#scoreboard{
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 20px;
+  font-weight: 700;
+  color: #fff;
+  z-index: 99999;
+  text-align: center;
+  pointer-events: none;
+  user-select: none;
+}
+#scoreboard #scoreCount{
+  display: inline-block;
+  font-size: 22px;
+  margin-left: 8px;
+  color: #ffdcdc;
+}
 </style>
 </head>
 <body>
@@ -85,7 +104,8 @@ canvas{display:block}
   MaxDamage: <span id="maxd">0</span> |
   CurrentDamage: <span id="curd">0</span>
 </div>
-
+<!-- Scoreboard: показывает количество уничтоженных сердец -->
+<div id="scoreboard">Счёт: <span id="scoreCount">0</span></div>
 
 <div id="msg">
   <div id="msgText"></div>
@@ -201,6 +221,7 @@ const playerMat = new THREE.MeshLambertMaterial({
   color: 0xc0c0c0
 });
 
+const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
 
 /* массив, куда будем складывать группы-гвозди */
 const nailGroup = new THREE.Group();   // на сцене только эта группа
@@ -379,7 +400,9 @@ function rebuildNailFormation(){
     nailGroup.remove(nailGroup.children[0]);
   }
 
-  const spacing = 0.5;   // расстояние между центрами
+  // вычисляем spacing по той же формуле, чтобы визуально не было «скачков»
+  const desiredGroupWidth = (RUNWAY_WIDTH / 3) * 0.96;
+  const spacing = desiredGroupWidth / Math.max(1, (MAX_NAILS - 1));
 
   for (let i = 0; i < nailCount; i++){
     const body = new THREE.Mesh(nailBody, playerMat);
@@ -629,6 +652,7 @@ let started   = false;
 let gameOver  = false;
 let songStartTime = 0;            // момент, когда нажали «Начать»
 const SONG_DURATION = 215;        // секунды
+let killCount = 0;
 
 rebuildNailFormation();   // создаём первий гвоздь
 
@@ -827,7 +851,6 @@ const MAX_CONSECUTIVE_ENEMY_WAVES = 2; // после 2 волн подряд т�
 const ENEMY_REPEAT_SMALL_CHANCE = 0.05; // вероятность третьей волны (5%)
 
 /* ---------- infinite runway ---------- */
-const RUNWAY_WIDTH  = 6;            // совпадает с диапазоном mouseX
 const RUNWAY_LENGTH = 80;
 const EDGE_HEIGHT   = 0.2;
 const gateWidth = RUNWAY_WIDTH / 2;
@@ -1100,8 +1123,12 @@ function spawnGate(side, z, data, widthOverride){
 function spawnEnemyGroup(baseSpawnZ) {
   const freshIds = [];
   const bulletCount = nailLevels.reduce((a, b) => a + b, 0);
-  const power = Math.min(1, (fireRate - 0.5) / 4 + (bulletCount - 1) / 10);
-  const crowdSize = 3 + Math.floor(power * power * 100 * difficultyFactor);
+  const power = Math.min(1, (fireRate - 0.9) / 10 + (bulletCount) / 20 + (fireRange - 14) / 50);
+
+  // сглаженная интерполяция: от min до max в зависимости от power^2
+  const CROWD_MIN = 1;
+  const CROWD_MAX = 55; // подбери: например 24 — максимум допустимых врагов в волне
+  const crowdSize = Math.max(CROWD_MIN, Math.round(CROWD_MIN + (CROWD_MAX - CROWD_MIN) * (power * power)));
 
   const side = Math.random() < 0.5 ? -1 : 1;
   const clusterX = side * (1 + Math.random() * 2);
@@ -1340,25 +1367,35 @@ function shoot(time){
       bMesh.userData.pooled = true;
     }
 
-    const nailPos = nail.position;
+        const nailPos = nail.position;
+
+    // безопасный спавн пули: вычисляем мировую X и clamp'им её в пределах дорожки,
+    // чтобы пуля не появлялась за пределами runway и не обходила стенки.
+    const spawnMargin = 0.05; // небольшая страховка от «ровно на краю»
+    const halfRoadSpawn = (RUNWAY_WIDTH / 2) - spawnMargin;
+    // мировая координата, от которой будем отталкиваться
+    let spawnX = nailGroup.position.x + nailPos.x;
+    spawnX = THREE.MathUtils.clamp(spawnX, -halfRoadSpawn, halfRoadSpawn);
+
     bMesh.position.set(
-      nailGroup.position.x + nailPos.x,
+      spawnX,
       0,
       nailGroup.position.z - 0.5
     );
     bMesh.userData.pierce = level;
 
     bullets.push({mesh: bMesh, vx:0, vz:-BULLET_SPEED, pierce: level});
-
   });
 }
 
 
 /* ---------- game-over screen ---------- */
 function showMsg(text){
-  document.getElementById('msgText').innerText = text;
+  const sc = (typeof killCount === 'number') ? killCount : 0;
+  document.getElementById('msgText').innerText = text + '\n\nсчёт: ' + sc;
   document.getElementById('msg').style.display = 'block';
 }
+
 
 /* ---------- enemy AI ---------- */
 const DETECT_DISTANCE = 20;   // на каком расстоянии враг замечает игрока
@@ -1406,14 +1443,24 @@ function animate(time){
 
   /* player movement (dt-based) */
   nailGroup.position.x += (mouseX - nailGroup.position.x) * 5 * dt; // 5 — «инерция» бокового движения
-  nailGroup.position.x = THREE.MathUtils.clamp(nailGroup.position.x, -3, 3);
+    // clamp позиции группы гвоздей по реальной ширине дорожки (динамически)
+  // margin — небольшой отступ, чтобы гвозди не упирались в край визуально
+  const margin = 0.15;
+  const halfRoadClamp = (RUNWAY_WIDTH / 2) - margin;
+  nailGroup.position.x = THREE.MathUtils.clamp(nailGroup.position.x, -halfRoadClamp, halfRoadClamp);
+
   nailGroup.position.z -= playerSpeed * dt;
 
   /* сжатие у краёв + ограничение */
-  const halfRoad   = 3 - 0.15;   // RUNWAY_WIDTH / 2 - 0.15
-  const minGap     = 0.15;
-  const maxGap     = 0.5;
-  const fadeZone   = halfRoad * 0.3;
+  const halfRoad = RUNWAY_WIDTH / 2 - 0.15; // более явная связь с RUNWAY_WIDTH
+  // минимальный gap (не опускаем слишком низко)
+  const minGap = 0.12;
+  // желаемая ширина группы гвоздей: чуть меньше 1/3 дорожки
+  const desiredGroupWidth = (RUNWAY_WIDTH / 3) * 0.9; // 0.96 = «чуть меньше», подберите 0.95..0.98 по вкусу
+  // максимальный шаг между гвоздями при нормальном положении (центр)
+  const maxGap = desiredGroupWidth / Math.max(1, (MAX_NAILS - 1));
+
+  const fadeZone = halfRoad * 0.3;
 
   const totalLen   = (nailCount - 1) * maxGap;
   let gap          = totalLen > halfRoad * 2
@@ -1567,6 +1614,12 @@ if (bullets.length) {
 
       if (bMesh.position.distanceTo(e.position) < hitDist){
         bData.pierce--;
+
+        // --- increment kill counter (player destroyed a heart/enemy) ---
+        if (typeof killCount === 'undefined') killCount = 0;
+        killCount++;
+        const scEl = document.getElementById('scoreCount');
+        if (scEl) scEl.textContent = killCount;
 
         // release enemy
         if (e.userData.pooled) {
