@@ -1,0 +1,6 @@
+[build]
+  functions = "netlify/functions"
+  publish = "."
+
+# если у вас специфичная сборка — можно добавить build command & publish directory
+# если вы просто статический сайт (index.html в корне), publish = "." оставляем.
