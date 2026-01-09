@@ -1426,12 +1426,33 @@ function shoot(time){
 }
 
 
-/* ---------- game-over screen ---------- */
+// Заменить текущую функцию showMsg на эту
 function showMsg(text){
   const sc = (typeof killCount === 'number') ? killCount : 0;
+
+  // если это финальный экран — показываем форму отправки в лидерборд
+  // (ловим несколько вариантов текста, на всякий случай)
+  const finalMarkers = ['Game Over', 'GameOver', 'You Win', 'You win', 'Win', 'Выиграли', 'Game Over!'];
+  const isFinal = finalMarkers.some(m => text && text.indexOf(m) !== -1);
+
+  if (isFinal) {
+    // скрываем старый текст (на всякий) и показываем форму отправки с финальным счётом
+    try {
+      showLeaderboardSubmit(sc);
+    } catch (err) {
+      // fallback: если по какой-то причине форма не доступна — показываем простой msg
+      document.getElementById('msgText').innerText = text + '\n\nсчёт: ' + sc;
+      document.getElementById('msg').style.display = 'block';
+      console.error('showLeaderboardSubmit failed', err);
+    }
+    return;
+  }
+
+  // иначе — обычный показ сообщений (как раньше)
   document.getElementById('msgText').innerText = text + '\n\nсчёт: ' + sc;
   document.getElementById('msg').style.display = 'block';
 }
+
 
 
 /* ---------- enemy AI ---------- */
@@ -2159,8 +2180,8 @@ function showLeaderboardSubmit(finalScore) {
   document.getElementById('msgText').innerHTML = `
     <div>Твой счёт: <b>${finalScore}</b></div>
     <div style="margin-top:10px">
-      <input id="lb_name" placeholder="Имя (макс 30)" maxlength="30" style="font-size:16px;padding:6px"/>
-      <input id="lb_email" placeholder="Email (для связи, опционально)" maxlength="80" style="font-size:14px;padding:6px;margin-left:6px"/>
+      <input id="lb_name" placeholder="Имя" maxlength="30" style="font-size:16px;padding:6px"/>
+      <input id="lb_email" placeholder="Email (для участия в конкурсе)" maxlength="80" style="font-size:14px;padding:6px;margin-left:6px"/>
       <button id="lb_send" style="font-size:16px;padding:6px;margin-left:6px">Отправить</button>
     </div>
     <div id="lb_status" style="margin-top:8px"></div>
