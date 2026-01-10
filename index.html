@@ -8,9 +8,92 @@
 body{margin:0;overflow:hidden;background:#111;font-family:sans-serif;color:#fff}
 canvas{display:block}
 #ui{position:absolute;top:10px;left:10px;font-size:18px}
-#msg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
-     background:#0008;padding:30px 50px;font-size:28px;text-align:center;display:none}
-#msg button{padding:10px 20px;font-size:20px;margin-top:15px;cursor:pointer}
+/* ===== Улучшенный финальный экран (адаптивный) ===== */
+#msg{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:20px;
+  z-index:100000;
+  background:linear-gradient(180deg, rgba(0,0,0,0.65), rgba(0,0,0,0.85));
+  box-sizing:border-box;
+  pointer-events:auto;
+}
+
+#msg .modal {
+  width: min(720px, 94%);
+  max-width: 720px;
+  background: linear-gradient(180deg, rgba(10,12,20,0.98), rgba(0,0,0,0.9));
+  border-radius: 14px;
+  padding: 18px 20px;
+  color: #fff;
+  text-align: center;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+}
+
+#msg .modal h2 {
+  margin: 6px 0 10px;
+  font-size: 26px;
+  letter-spacing: 0.4px;
+}
+
+#msg .modal p.lead {
+  margin: 8px 0 14px;
+  font-size: 16px;
+  color: #ddd;
+}
+
+#msg .lb-row {
+  display:flex;
+  gap:8px;
+  justify-content:center;
+  flex-wrap:wrap;
+  margin-top:10px;
+}
+
+#msg input[type="text"], #msg input[type="email"] {
+  font-size: 15px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: rgba(255,255,255,0.03);
+  color: #fff;
+  outline: none;
+  min-width: 160px;
+  box-sizing: border-box;
+}
+
+#msg button.lb-btn {
+  font-size: 15px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(180deg,#00ff88,#00d06a);
+  color: #000;
+  font-weight:700;
+}
+
+#msg .secondary {
+  background: transparent;
+  border: 1px solid #555;
+  color: #fff;
+}
+
+#msg #lb_status { margin-top:10px; font-size:14px; color:#cfcfcf; min-height:18px; }
+
+#msg #lb_top { margin-top:12px; text-align:left; color:#fff; max-height:180px; overflow:auto; padding:6px; background:rgba(255,255,255,0.02); border-radius:8px; }
+
+/* Mobile small text */
+@media (max-width:420px) {
+  #msg .modal h2 { font-size:20px; }
+  #msg .modal p.lead { font-size:14px; }
+  #msg input[type="text"], #msg input[type="email"] { min-width:120px; font-size:14px; padding:7px; }
+  #msg button.lb-btn { padding:7px 10px; font-size:14px; }
+}
+
 
 #preloader{
   position:fixed; inset:0;
@@ -138,10 +221,11 @@ canvas{display:block}
 <!-- Scoreboard: показывает количество уничтоженных сердец -->
 <div id="scoreboard">Счёт: <span id="scoreCount">0</span></div>
 
-<div id="msg">
+<div id="msg" style="display:none">
   <div id="msgText"></div>
   <button onclick="location.reload()">Restart</button>
 </div>
+
 <div id="progressBar">
   <div id="progressFill"></div>
 </div>
@@ -683,7 +767,25 @@ let started   = false;
 let gameOver  = false;
 let songStartTime = 0;            // момент, когда нажали «Начать»
 const SONG_DURATION = 215;        // секунды
-let killCount = 0;
+
+// new scoring: hearts (по 1) и стены (по 100)
+let heartCount = 0;
+let wallCount = 0;
+
+function computeScore(){
+  return (Number(heartCount) || 0) + (Number(wallCount) || 0) * 100;
+}
+function updateScoreUI(){
+  const scEl = document.getElementById('scoreCount');
+  if (scEl) scEl.textContent = computeScore();
+}
+// initial render
+updateScoreUI();
+
+// --- expose tiny getters so non-module script can read current values ---
+window.computeScore = () => computeScore();   // возвращает актуальный total
+window.getHeartCount = () => heartCount;
+window.getWallCount  = () => wallCount;
 
 rebuildNailFormation();   // создаём первий гвоздь
 
@@ -1428,30 +1530,18 @@ function shoot(time){
 
 // Заменить текущую функцию showMsg на эту
 function showMsg(text){
-  const sc = (typeof killCount === 'number') ? killCount : 0;
-
-  // если это финальный экран — показываем форму отправки в лидерборд
-  // (ловим несколько вариантов текста, на всякий случай)
-  const finalMarkers = ['Game Over', 'GameOver', 'You Win', 'You win', 'Win', 'Выиграли', 'Game Over!'];
-  const isFinal = finalMarkers.some(m => text && text.indexOf(m) !== -1);
-
-  if (isFinal) {
-    // скрываем старый текст (на всякий) и показываем форму отправки с финальным счётом
-    try {
-      showLeaderboardSubmit(sc);
-    } catch (err) {
-      // fallback: если по какой-то причине форма не доступна — показываем простой msg
-      document.getElementById('msgText').innerText = text + '\n\nсчёт: ' + sc;
-      document.getElementById('msg').style.display = 'block';
-      console.error('showLeaderboardSubmit failed', err);
-    }
-    return;
+  const hearts = Number(heartCount || 0);
+  const walls  = Number(wallCount || 0);
+  const total  = computeScore();
+  const el = document.getElementById('msgText');
+  if (el) {
+    // Точный формат, который вы просили:
+    el.innerText = `${text}\n\nВы разбили ${hearts} сердец и ${walls} витрин! Ваш счёт: ${total}`;
   }
-
-  // иначе — обычный показ сообщений (как раньше)
-  document.getElementById('msgText').innerText = text + '\n\nсчёт: ' + sc;
-  document.getElementById('msg').style.display = 'block';
+  const msg = document.getElementById('msg');
+  if (msg) msg.style.display = 'block';
 }
+
 
 
 
@@ -1673,11 +1763,9 @@ if (bullets.length) {
       if (bMesh.position.distanceTo(e.position) < hitDist){
         bData.pierce--;
 
-        // --- increment kill counter (player destroyed a heart/enemy) ---
-        if (typeof killCount === 'undefined') killCount = 0;
-        killCount++;
-        const scEl = document.getElementById('scoreCount');
-        if (scEl) scEl.textContent = killCount;
+        // increment hearts (1 point each)
+        heartCount++;
+        updateScoreUI();
 
         // release enemy
         if (e.userData.pooled) {
@@ -1732,6 +1820,8 @@ if (bullets.length) {
       }
 
       // remove wall (return to pool)
+      wallCount++;
+      updateScoreUI();
       releaseWallMesh(w);
       walls.splice(wi, 1);
     } else {
@@ -1766,7 +1856,7 @@ if (bullets.length) {
           rebuildNailFormation();
           if (nailCount === 0){
             gameOver = true;
-            showMsg('Game Over!');
+            showLeaderboardSubmit(computeScore(), 'Game over!');
             return;
           }
         }
@@ -1817,7 +1907,7 @@ if (bullets.length) {
       // если отрицательный gate «-1 гвоздь» и остался всего один
       if (d.val === -1 && nailCount === 1){
         gameOver = true;
-        showMsg('Game Over!'); 
+        showLeaderboardSubmit(computeScore(), 'Game over!');
         return;
       }
       if (d.val > 0) {
@@ -1881,6 +1971,8 @@ if (Array.isArray(walls) && walls.length) {
     // текущее HP стены (float)
     const wHP = (typeof w.userData.health === 'number') ? w.userData.health : 0;
     if (wHP <= 0) {
+      wallCount++;
+      updateScoreUI();
       releaseWallMesh(w);
       walls.splice(wi,1);
       continue;
@@ -1958,7 +2050,7 @@ if (Array.isArray(walls) && walls.length) {
       document.getElementById('rate').textContent = fireRate.toFixed(1);
       document.getElementById('range').textContent = fireRange.toFixed(1);
       gameOver = true;
-      showMsg('Game Over!');
+      showLeaderboardSubmit(computeScore(), 'Game over!');
       return;
     }
 
@@ -1981,7 +2073,8 @@ if (Array.isArray(walls) && walls.length) {
       if (typeof handleSingleGateForMaxParams === 'function') {
         try { handleSingleGateForMaxParams(gateData); } catch (err) { console.warn('handleSingleGateForMaxParams failed', err); }
       }
-
+      wallCount++;
+      updateScoreUI();
       releaseWallMesh(w);
       walls.splice(wi,1);
     } else {
@@ -2000,7 +2093,7 @@ if (Array.isArray(walls) && walls.length) {
 
   if (elapsedSec >= SONG_DURATION){
     gameOver = true;
-    showMsg('You Win!');
+    showLeaderboardSubmit(computeScore(), 'Победа!');
     return;
   }
 
@@ -2173,55 +2266,169 @@ function createTopContainer(){
 }
 
 // Форма отправки результата (вызвать при gameOver)
-function showLeaderboardSubmit(finalScore) {
+// -------------------- LocalStorage helpers --------------------
+function loadPlayer(){
+  try {
+    const raw = localStorage.getItem('mimo_player');
+    return raw ? JSON.parse(raw) : null;
+  } catch(e){
+    return null;
+  }
+}
+function savePlayer(name, email){
+  try {
+    localStorage.setItem('mimo_player', JSON.stringify({ name: String(name || '').trim(), email: String(email || '').trim() || null }));
+  } catch(e){}
+}
+
+// -------------------- submit helper --------------------
+async function submitScore({ name, email, score, meta }){
+  const payload = { name: String(name || 'anon').slice(0,64), score: Number(score||0), contact_email: email || null, meta: meta || { source: 'web' } };
+  const res = await fetch(`${API_BASE}/submit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const j = await res.json().catch(()=>({ error: 'invalid_json' }));
+  return { ok: res.ok, status: res.status, json: j };
+}
+
+// -------------------- showLeaderboardSubmit (новая версия) --------------------
+/*
+  showLeaderboardSubmit(finalScore, title)
+  - finalScore: число (обычно computeScore())
+  - title: необязательная строка заголовка ("Game over!" / "Победа!")
+*/
+async function showLeaderboardSubmit(finalScore, title){
   const el = document.getElementById('msg');
-  el.style.display = 'block';
-  // делаем простую форму: имя + email (опционально) + кнопки
-  document.getElementById('msgText').innerHTML = `
-    <div>Твой счёт: <b>${finalScore}</b></div>
-    <div style="margin-top:10px">
-      <input id="lb_name" placeholder="Имя" maxlength="30" style="font-size:16px;padding:6px"/>
-      <input id="lb_email" placeholder="Email (для участия в конкурсе)" maxlength="80" style="font-size:14px;padding:6px;margin-left:6px"/>
-      <button id="lb_send" style="font-size:16px;padding:6px;margin-left:6px">Отправить</button>
+  if (!el) return;
+    // use module-exposed getters if available (fallback to globals if present)
+  const hearts = (typeof getHeartCount === 'function') ? Number(getHeartCount()) : (typeof heartCount !== 'undefined' ? Number(heartCount) : 0);
+  const walls  = (typeof getWallCount === 'function') ? Number(getWallCount()) : (typeof wallCount !== 'undefined' ? Number(wallCount) : 0);
+  const total  = Number(finalScore || (typeof computeScore === 'function' ? computeScore() : (hearts + walls * 100)) || 0);
+  const saved = loadPlayer();
+
+  // build modal html
+  const header = title ? `<h2>${escapeHtml(title)}</h2>` : '';
+  const lead = `<p class="lead">Вы разбили ${hearts} сердец и ${walls} витрин! Ваш счёт: <b>${total}</b></p>`;
+
+  // if we have saved player -> show auto-send status + option to change
+  if (saved && saved.name){
+    el.innerHTML = `
+      <div class="modal">
+        ${header}
+        ${lead}
+        <div style="font-size:14px;color:#bfbfbf">Мы запомнили вас как <b>${escapeHtml(saved.name)}</b>${saved.email? ' ('+escapeHtml(saved.email)+')':''} — результат отправится автоматически.</div>
+        <div class="lb-row" style="margin-top:12px;justify-content:center">
+          <button class="lb-btn" id="lb_resend">Отправить сейчас</button>
+          <button class="lb-btn secondary" id="lb_edit">Изменить данные</button>
+          <button class="lb-btn secondary" onclick="location.reload()">Restart</button>
+        </div>
+        <div id="lb_status"></div>
+        <div id="lb_top"></div>
+      </div>
+    `;
+    el.style.display = 'flex';
+    fetchAndRenderTop();
+
+    // auto-send in background (but also allow user to press resend)
+    (async ()=>{
+      const status = document.getElementById('lb_status');
+      if (!status) return;
+      status.innerText = 'Отправляем...';
+      const { ok, json } = await submitScore({ name: saved.name, email: saved.email, score: total, meta: { source: 'auto' } }).catch(e => ({ ok:false, json: { error: 'network' } }));
+      if (ok) {
+        status.innerText = 'Сохранено! Обновляем топ...';
+        await fetchAndRenderTop();
+      } else {
+        status.innerText = 'Не удалось отправить: ' + (json?.error || 'server');
+      }
+    })();
+
+    document.getElementById('lb_resend').onclick = async () => {
+      const status = document.getElementById('lb_status');
+      status.innerText = 'Отправка...';
+      const { ok, json } = await submitScore({ name: saved.name, email: saved.email, score: total }).catch(e=>({ ok:false, json:{ error:'network' }}));
+      if (ok) {
+        status.innerText = 'Сохранено! Обновляю топ...';
+        await fetchAndRenderTop();
+      } else {
+        status.innerText = 'Ошибка: ' + (json?.error || 'server');
+      }
+    };
+
+    document.getElementById('lb_edit').onclick = () => {
+      // show editable form filled with saved values
+      showLeaderboardSubmit(total, title); // re-open as form (below will detect saved and replace with form)
+      // small delay to replace content:
+      setTimeout(() => {
+        // replace modal with explicit form
+        renderManualForm(total, title, saved.name, saved.email);
+      }, 50);
+    };
+
+    return;
+  }
+
+  // если нет сохранённых данных — показываем обычную форму (имя + email)
+  el.innerHTML = `
+    <div class="modal">
+      ${header}
+      ${lead}
+      <div style="display:flex;flex-direction:column;gap:8px;align-items:center;margin-top:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:center">
+          <input id="lb_name" placeholder="Имя" maxlength="30" />
+          <input id="lb_email" placeholder="Email (по желанию)" maxlength="80" />
+        </div>
+        <div class="lb-row">
+          <button class="lb-btn" id="lb_send">Отправить</button>
+          <button class="lb-btn secondary" id="lb_cancel">Отмена</button>
+        </div>
+        <div id="lb_status"></div>
+        <div id="lb_top"></div>
+      </div>
     </div>
-    <div id="lb_status" style="margin-top:8px"></div>
   `;
-  // отрисовать текущий топ
+  el.style.display = 'flex';
   fetchAndRenderTop();
+
+  // helper to render the manual form programmatically (used by edit)
+  function renderManualForm(scoreVal, headerTitle, namePref='', emailPref=''){
+    const modal = document.querySelector('#msg .modal');
+    if (!modal) return;
+    modal.querySelector('#lb_name').value = namePref || '';
+    modal.querySelector('#lb_email').value = emailPref || '';
+    // focus
+    modal.querySelector('#lb_name').focus();
+  }
+
+  // wire up events
+  document.getElementById('lb_cancel').onclick = () => {
+    el.style.display = 'none';
+    // optionally restart/reset if you want to immediately restart game
+    // location.reload();
+  };
 
   document.getElementById('lb_send').onclick = async () => {
     const name = (document.getElementById('lb_name').value || '').trim() || 'anon';
     const email = (document.getElementById('lb_email').value || '').trim() || null;
+    const status = document.getElementById('lb_status');
+    if (name.length > 30) { status.innerText = 'Имя слишком длинное'; return; }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { status.innerText = 'Неверный email'; return; }
 
-    // базовая валидация
-    if (name.length > 30) { document.getElementById('lb_status').innerText = 'Имя слишком длинное'; return; }
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { document.getElementById('lb_status').innerText = 'Неверный email'; return; }
-
-    document.getElementById('lb_status').innerText = 'Отправка...';
-    try {
-      const res = await fetch(`${API_BASE}/submit`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          score: finalScore,
-          meta: { source: 'github_pages' },
-          contact_email: email
-        })
-      });
-      const j = await res.json();
-      if (!res.ok) {
-        document.getElementById('lb_status').innerText = 'Ошибка сервера: ' + (j?.error || res.status);
-        return;
-      }
-      document.getElementById('lb_status').innerText = 'Сохранено! Подгружаю топ...';
-      await fetchAndRenderTop(); // обновляем топ
-    } catch (e) {
-      console.error(e);
-      document.getElementById('lb_status').innerText = 'Network error';
+    status.innerText = 'Отправка...';
+    const { ok, json } = await submitScore({ name, email, score: total }).catch(()=>({ ok:false, json:{ error:'network' }}));
+    if (ok){
+      status.innerText = 'Сохранено! Подгружаю топ...';
+      // запомним игрока для автоподач в будущем
+      try { savePlayer(name, email); } catch(e){}
+      await fetchAndRenderTop();
+    } else {
+      status.innerText = 'Ошибка сервера: ' + (json?.error || 'server');
     }
   };
 }
+
 
 // Для быстрого теста (в консоли) можно вызвать:
 // showLeaderboardSubmit(1234);
