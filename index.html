@@ -1105,7 +1105,7 @@ function updateWallText(w){
   // round health and handle zero: don't draw 0 (caller handles removal)
   const rawHp = w.userData.health || 0;
   if (rawHp <= 0) return;
-  const hp = Math.max(1, Math.round(rawHp));
+  const hp = Math.round(rawHp);
 
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.fillStyle = 'rgba(0,0,0,0.22)';
@@ -1802,7 +1802,7 @@ if (bullets.length) {
     w.userData.health -= pd;
     w.userData.pendingDamage = 0;
 
-    if (w.userData.health <= 0){
+    if (w.userData.health < 0.5){
       // spawn gate with width equal WALL_WIDTH at exact wall center
       const r = Math.random();
       let gateData;
@@ -1970,13 +1970,13 @@ if (Array.isArray(walls) && walls.length) {
 
     // текущее HP стены (float)
     const wHP = (typeof w.userData.health === 'number') ? w.userData.health : 0;
-    if (wHP <= 0) {
-      wallCount++;
-      updateScoreUI();
-      releaseWallMesh(w);
-      walls.splice(wi,1);
-      continue;
-    }
+    // if (wHP < 0.5) {
+    //   wallCount++;
+    //   updateScoreUI();
+    //   releaseWallMesh(w);
+    //   walls.splice(wi,1);
+    //   continue;
+    // } ГЕМИНИ СКАЗАЛ УДАЛИТЬ, не знаю
 
     // собираем индексы гвоздей, которые находятся ПЕРЕД стенкой (front) и в пределах X
     const collidingIndices = [];
@@ -1996,7 +1996,7 @@ if (Array.isArray(walls) && walls.length) {
     if (collidingIndices.length === 0) continue;
 
     // Для стабильности берём H0 (округлённое отображаемое HP) как основу расчёта dmg
-    const H0 = Math.max(0, Math.round(wHP));
+    const H0 = Math.ceil(wHP);
 
     // Вычисляем dmg для каждого гвоздя: не больше уровня гвоздя и не больше текущего HP стены.
     const dmgEntries = collidingIndices.map(idx => {
@@ -2060,7 +2060,7 @@ if (Array.isArray(walls) && walls.length) {
     rebuildNailFormation();
 
     // Если стенка разрушилась — порождаем гейт и удаляем стенку
-    if (w.userData.health <= 0){
+    if (w.userData.health < 0.5){
       const r = Math.random();
       let gateData;
       if (r < 0.40) gateData = { label: 'УРОВЕНЬ +1', action: 'level', val: 1 };
