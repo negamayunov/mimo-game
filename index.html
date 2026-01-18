@@ -1292,6 +1292,32 @@ function spawnEnemyGroup(baseSpawnZ) {
   }
 }
 
+function spawnBigHeart(zPos) {
+  const e = acquireEnemyMesh();
+  if (!e) return;
+
+  const curDamage = Math.max(0, Math.round(calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })));
+  const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
+  const mean = (curDamage + bestDamage) / 2;
+  const health = Math.max(10, Math.round(mean * (0.6 + Math.random() * 0.4)));
+
+  e.scale.set(1.6, 1.6, 1.6); // Уменьшили с 2.0 до 1.6
+  e.position.set((Math.random() - 0.5) * 3, 1.2, zPos);
+  
+  e.userData.isBigHeart = true;
+  e.userData.hp = health;
+  e.userData.initialHp = health;
+  e.userData.speedMult = 1.3; 
+  
+  e.uuid = THREE.MathUtils.generateUUID();
+  enemies.push(e);
+
+  // Создаем табличку и сразу ставим правильный 'initial', чтобы логика обновления не ломалась
+  const lbl = acquireLabelMesh(health.toString(), zPos);
+  e.userData.labelMesh = lbl;
+  enemyLabels.push({ ids: [e.uuid], mesh: lbl, initial: health, isBigHeart: true });
+}
+
 function spawnWallAt(sideWall, zPos) {
   const w = acquireWallMesh();
   let xCenter = 0;
@@ -1347,15 +1373,24 @@ function spawnWave() {
   let waveType;
   const roll = Math.random();
 
-  // ---- ВЫБОР ТИПА ВОЛНЫ ----
+const elapsedSec = (performance.now() - songStartTime) / 1000;
+  // const isSecondThird = elapsedSec > SONG_DURATION / 3;
+  const isSecondThird = 1
+
   if (consecutiveEnemyWaves >= MAX_CONSECUTIVE_ENEMY_WAVES) {
-    // враги заблокированы
     if (roll < 0.5) waveType = "gate";
     else waveType = "wall";
   } else {
-    if (roll < 0.5) waveType = "enemy";
-    else if (roll < 0.8) waveType = "gate";
-    else waveType = "wall";
+    // Если хотя бы вторая треть игры, даем 20% шанс на Большое Сердце вместо обычных врагов
+    if (roll < 0.2 && isSecondThird) {
+       waveType = "big_heart";
+    } else if (roll < 0.5) {
+       waveType = "enemy";
+    } else if (roll < 0.8) {
+       waveType = "gate";
+    } else {
+       waveType = "wall";
+    }
   }
 
   // Ограничения на подряд стены
@@ -1384,6 +1419,13 @@ function spawnWave() {
   if (waveType === "enemy") {
     spawnEnemyGroup(baseSpawnZ);
     consecutiveEnemyWaves++;
+    consecutiveGateWaves = 0;
+    consecutiveWallWaves = 0;
+  }
+
+  else if (waveType === "big_heart") {
+    spawnBigHeart(baseSpawnZ);
+    consecutiveEnemyWaves++; 
     consecutiveGateWaves = 0;
     consecutiveWallWaves = 0;
   }
@@ -1563,7 +1605,8 @@ function updateEnemiesAI(dt){
       dir.y = 0; // не летим вверх
       dir.z *= 0.2; // не летим вперёд
       // ускорение пропорционально difficultyFactor
-      e.position.addScaledVector(dir, ENEMY_SPEED * difficultyFactor * dt);
+      const speed = ENEMY_SPEED * difficultyFactor * (e.userData.speedMult || 1);
+      e.position.addScaledVector(dir, speed * dt);
     }
   });
 }
@@ -1670,7 +1713,11 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
   // alive.map(e => e.uuid.slice(-4))
 // );
 
-  if (alive.length !== initial) {
+  // Определяем, какое число мы должны видеть сейчас
+  const currentVal = enemyLabels[k].isBigHeart ? Math.round(alive[0].userData.hp) : alive.length;
+
+  // Если текущее число отличается от того, что мы записали в 'initial', обновляем картинку
+  if (currentVal !== initial) {
     const lblCanvas = mesh.userData.canvas;
     const lblCtx = mesh.userData.ctx;
     if (lblCtx && lblCanvas) {
@@ -1681,11 +1728,14 @@ for (let k = enemyLabels.length - 1; k >= 0; k--) {
       lblCtx.font = 'bold 48px sans-serif';
       lblCtx.textAlign = 'center';
       lblCtx.textBaseline = 'middle';
-      lblCtx.fillText(alive.length.toString(), lblCanvas.width / 2, lblCanvas.height / 2);
-      // пометить texture как нуждающийся в обновлении
+      
+      lblCtx.fillText(currentVal.toString(), lblCanvas.width / 2, lblCanvas.height / 2);
+      
       if (mesh.userData.tex) mesh.userData.tex.needsUpdate = true;
       else if (mesh.material && mesh.material.map) mesh.material.map.needsUpdate = true;
-      enemyLabels[k].initial = alive.length;
+      
+      // Запоминаем новое значение, чтобы не перерисовывать каждый кадр без нужды
+      enemyLabels[k].initial = currentVal;
     }
   }
 
@@ -1755,40 +1805,62 @@ if (bullets.length) {
 
     if (bulletConsumed) continue;
 
-    // 2) enemy collision (unchanged logic)
+    // 2) enemy collision (полная и стабильная версия)
     for (let j = enemies.length - 1; j >= 0; j--){
       const e = enemies[j];
-      const hitDist = 0.5;
+      if (!e || !e.userData.active) continue;
 
-      if (bMesh.position.distanceTo(e.position) < hitDist){
-        bData.pierce--;
+      // Считаем дистанцию по плоскости земли
+      const dx = bMesh.position.x - e.position.x;
+      const dz = bMesh.position.z - e.position.z;
+      const distXZ = Math.sqrt(dx*dx + dz*dz);
+      
+      const hitRadius = e.userData.isBigHeart ? 0.9 : 0.5;
 
-        // increment hearts (1 point each)
-        heartCount++;
-        updateScoreUI();
-
-        // release enemy
-        if (e.userData.pooled) {
-          releaseEnemyMesh(e);
-        } else {
-          scene.remove(e);
-        }
-        enemies.splice(j, 1);
-
-        if (bData.pierce <= 0){
-          // release bullet
-          if (bMesh.userData.pooled) {
-            releaseBulletMesh(bMesh);
-          } else {
-            scene.remove(bMesh);
-          }
+      if (distXZ < hitRadius) {
+        if (e.userData.isBigHeart) {
+          // ЛОГИКА БОССА:
+          // Босс получает урон равный уровню пули
+          e.userData.hp -= bData.pierce;
+          
+          // Пуля всегда ломается о Босса
+          if (bMesh.userData.pooled) releaseBulletMesh(bMesh);
+          else scene.remove(bMesh);
           bullets.splice(i, 1);
-          break;
+          bulletConsumed = true;
+
+          // Если жизни Босса кончились — удаляем его
+          if (e.userData.hp <= 0) {
+            heartCount += Math.round(e.userData.initialHp || 10);
+            updateScoreUI();
+            releaseEnemyMesh(e);
+            enemies.splice(j, 1);
+          }
+          break; // Пуля уничтожена, выходим к следующей пуле
         } else {
-          // update mesh state (keep bullet flying) — nothing else to do
+          // ЛОГИКА ОБЫЧНОГО СЕРДЦА:
+          // Оно всегда умирает с одного попадания
+          heartCount++;
+          updateScoreUI();
+          releaseEnemyMesh(e);
+          enemies.splice(j, 1);
+
+          // Пуля теряет 1 заряд пробития
+          bData.pierce--;
+
+          // Если пробитие кончилось — удаляем пулю
+          if (bData.pierce <= 0) {
+            if (bMesh.userData.pooled) releaseBulletMesh(bMesh);
+            else scene.remove(bMesh);
+            bullets.splice(i, 1);
+            bulletConsumed = true;
+            break; // Пуля уничтожена, выходим к следующей пуле
+          }
+          // Если pierce > 0, пуля летит дальше и может убить кого-то еще в этом же кадре
         }
       }
     }
+    if (bulletConsumed) continue;
   } // end bullets loop
 
   // --- apply accumulated damage to walls once per frame ---
@@ -1831,42 +1903,68 @@ if (bullets.length) {
   }
 } // end if bullets.length
 
-  /* player–enemy collision */
+/* player–enemy collision */
   for (let j = enemies.length - 1; j >= 0; j--){
     const e = enemies[j];
     let hit = false;
 
     for (let i = nailGroup.children.length - 1; i >= 0; i--){
       const nail = nailGroup.children[i];
-      const dx = nailGroup.position.x + nail.position.x - e.position.x;
-      const dz = nailGroup.position.z                - e.position.z;
+      const nailWorldX = nailGroup.position.x + nail.position.x;
+      const nailWorldZ = nailGroup.position.z + nail.position.z;
+      
+      const dx = nailWorldX - e.position.x;
+      const dz = nailWorldZ - e.position.z;
       const dist = Math.sqrt(dx*dx + dz*dz);
 
-      if (dist < 0.7){
+      // Радиус столкновения: для больших сердец чуть больше
+      const collisionRadius = e.userData.isBigHeart ? 0.9 : 0.7;
+
+      if (dist < collisionRadius){
         hit = true;
 
-        if (nailLevels[i] > 1){
-          // теряем уровень
-          nailLevels[i]--;
-          rebuildNailFormation();
+        if (e.userData.isBigHeart) {
+           // Логика Большого Сердца: вычитаем его жизни из уровня гвоздя
+           const damageToHeart = Math.min(e.userData.hp, nailLevels[i]);
+           e.userData.hp -= damageToHeart;
+           nailLevels[i] -= damageToHeart;
+
+           // Если уровень гвоздя обнулился — удаляем гвоздь
+           if (nailLevels[i] <= 0) {
+              nailLevels.splice(i, 1);
+              nailCount = nailLevels.length;
+           }
+           
+           // Если это было последнее здоровье сердца — удаляем сердце
+           if (e.userData.hp <= 0) {
+              if (e.userData.pooled) releaseEnemyMesh(e);
+              else scene.remove(e);
+              enemies.splice(j, 1);
+           }
         } else {
-          // удаляем гвоздь
-          nailCount--;
-          nailLevels.splice(i,1);
-          rebuildNailFormation();
-          if (nailCount === 0){
-            gameOver = true;
-            showLeaderboardSubmit(computeScore(), 'Game over!');
-            return;
-          }
+           // Логика обычного сердца
+           if (nailLevels[i] > 1) {
+             nailLevels[i]--;
+           } else {
+             nailLevels.splice(i, 1);
+             nailCount = nailLevels.length;
+           }
+           if (e.userData.pooled) releaseEnemyMesh(e);
+           else scene.remove(e);
+           enemies.splice(j, 1);
         }
-        if (e.userData.pooled) {
-          releaseEnemyMesh(e);
-        } else {
-          scene.remove(e);
+
+        // Пересобираем модель игрока после потери уровня/гвоздя
+        rebuildNailFormation();
+
+        // Проверка на проигрыш
+        if (nailCount <= 0) {
+          gameOver = true;
+          showLeaderboardSubmit(computeScore(), 'Game over!');
+          return; // Теперь он внутри функции animate и сработает верно
         }
-        enemies.splice(j,1);
-        break;   // одно сердце – один гвоздь
+        
+        break; // Прерываем проверку гвоздей для этого врага
       }
     }
   }
