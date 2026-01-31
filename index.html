@@ -2487,7 +2487,7 @@ async function showLeaderboardSubmit(finalScore, title){
         </div>
         <div class="lb-row">
           <button class="lb-btn" id="lb_send">Отправить</button>
-          <button class="lb-btn secondary" id="lb_cancel">Отмена</button>
+          <button class="lb-btn secondary" id="lb_cancel">Рестарт без отправки</button>
         </div>
         <div id="lb_status"></div>
         <div id="lb_top"></div>
@@ -2509,9 +2509,8 @@ async function showLeaderboardSubmit(finalScore, title){
 
   // wire up events
   document.getElementById('lb_cancel').onclick = () => {
-    el.style.display = 'none';
-    // optionally restart/reset if you want to immediately restart game
-    // location.reload();
+    // Просто перезагружаем страницу
+    location.reload();
   };
 
   document.getElementById('lb_send').onclick = async () => {
