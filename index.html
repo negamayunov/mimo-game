@@ -209,7 +209,7 @@ canvas{display:block}
 </style>
 </head>
 <body>
-<div id="ui">
+<div id="ui" style="display:none">
   Гвоздей: <span id="count">1</span> |
   Уровней: <span id="levels">1</span><br>
   Скорость стрельбы: <span id="rate">1.0</span>/сек |
@@ -219,7 +219,7 @@ canvas{display:block}
   CurrentDamage: <span id="curd">0</span>
 </div>
 <!-- Scoreboard: показывает количество уничтоженных сердец -->
-<div id="scoreboard">Счёт: <span id="scoreCount">0</span></div>
+<div id="scoreboard" style="display:none">Счёт: <span id="scoreCount">0</span></div>
 
 <div id="msg" style="display:none">
   <div id="msgText"></div>
@@ -306,6 +306,10 @@ fetch(audioSrc)
 startBtn.addEventListener('click', () => {
   if (audioReady) bgmEl.play().catch(() => {});
   preEl.style.display = 'none';
+  
+  // Показываем счётчик только сейчас
+  document.getElementById('scoreboard').style.display = 'block';
+
   started = true;
   songStartTime = performance.now(); // фиксируем старт
 });
@@ -766,7 +770,7 @@ function handlePairGateForMaxParams(g1, g2){
 let started   = false;
 let gameOver  = false;
 let songStartTime = 0;            // момент, когда нажали «Начать»
-const SONG_DURATION = 215;        // секунды
+const SONG_DURATION = 207;        // секунды
 
 // new scoring: hearts (по 1) и стены (по 100)
 let heartCount = 0;
@@ -1280,6 +1284,9 @@ function spawnEnemyGroup(baseSpawnZ) {
       e.userData.pooled = false;
       scene.add(e);
     }
+    // ОБЯЗАТЕЛЬНО: Стираем память о том, что это мог быть босс
+    e.userData.isBigHeart = false;
+    
     e.position.set(
       clampedClusterX + (Math.random() - 0.5) * 1.5,
       0.3,
