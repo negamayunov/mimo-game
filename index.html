@@ -367,6 +367,26 @@ function makeTextCanvas(w, h){
   return { canvas, ctx };
 }
 
+function makeCheckeredTexture(size = 256){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const step = size / 8;
+
+  for (let y = 0; y < 8; y++){
+    for (let x = 0; x < 8; x++){
+      const even = (x + y) % 2 === 0;
+      ctx.fillStyle = even ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.15)';
+      ctx.fillRect(x * step, y * step, step, step);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 1);
+  return tex;
+}
+
 // --- Cached gate panel materials ---
 const gatePanelMatPos = new THREE.MeshBasicMaterial({
   color: 0x00ff00, transparent: true, opacity: 0.3, depthWrite: false
@@ -775,6 +795,15 @@ const SONG_DURATION = 207;        // секунды
 // new scoring: hearts (по 1) и стены (по 100)
 let heartCount = 0;
 let wallCount = 0;
+
+/* ---------- FINISH GATE ---------- */
+let finishGate = null;
+let finishSpawned = false;
+let finishPassed = false;
+let finishZ = null;
+
+// за сколько секунд до конца показываем финиш
+const FINISH_PREP_TIME = 6; // сек
 
 function computeScore(){
   return (Number(heartCount) || 0) + (Number(wallCount) || 0) * 100;
@@ -1191,6 +1220,7 @@ function updateRunway(){
 }
 
 function spawnGate(side, z, data, widthOverride){
+  if (finishZ !== null && z <= finishZ) return;
   // unified spawnGate: supports optional widthOverride (for walls -> gate)
   const gateGroup = new THREE.Group();
   gateGroup.userData = data || {};
@@ -1257,7 +1287,87 @@ function spawnGate(side, z, data, widthOverride){
   return gateGroup;
 }
 
+function spawnFinishGate(z){
+  const group = new THREE.Group();
+
+  const tex = makeCheckeredTexture();
+  const mat = new THREE.MeshBasicMaterial({
+    map: tex,
+    transparent: true,
+    opacity: 0.65,
+    depthWrite: false
+  });
+
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x88ffcc,
+    transparent: true,
+    opacity: 0.25,
+    depthWrite: false
+  });
+
+  const width = RUNWAY_WIDTH + 1.2;
+  const height = 3;
+
+  // панель
+  const panel = new THREE.Mesh(
+    new THREE.PlaneGeometry(width, height),
+    mat
+  );
+  panel.position.y = 1.2;
+  group.add(panel);
+
+  // свечение
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(width + 0.6, height + 0.6),
+    glowMat
+  );
+  glow.position.y = 1.2;
+  glow.position.z = -0.05;
+  group.add(glow);
+
+  // рамка
+  const frame = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.PlaneGeometry(width, height)),
+    new THREE.LineBasicMaterial({ color: 0xffffff })
+  );
+  frame.position.y = 1.2;
+  frame.position.z = 0.01;
+  group.add(frame);
+
+  group.position.set(0, 0, z);
+  group.userData.isFinish = true;
+
+  scene.add(group);
+  finishGate = group;
+  finishZ = z;
+
+  // === ЗАЧИСТКА: Удаляем всё, что уже успело появиться ЗА финишем ===
+  // 1. Удаляем врагов
+  for(let i = enemies.length - 1; i >= 0; i--){
+    if(enemies[i].position.z < z){
+       if(enemies[i].userData.pooled) releaseEnemyMesh(enemies[i]);
+       else scene.remove(enemies[i]);
+       enemies.splice(i, 1);
+    }
+  }
+  // 2. Удаляем стены
+  for(let i = walls.length - 1; i >= 0; i--){
+    if(walls[i].position.z < z){
+       releaseWallMesh(walls[i]);
+       walls.splice(i, 1);
+    }
+  }
+  // 3. Удаляем обычные ворота
+  for(let i = gates.length - 1; i >= 0; i--){
+    if(gates[i].position.z < z){
+       scene.remove(gates[i]);
+       gates.splice(i, 1);
+    }
+  }
+}
+
 function spawnEnemyGroup(baseSpawnZ) {
+  if (finishZ !== null && baseSpawnZ <= finishZ) return;
   const freshIds = [];
   const bulletCount = nailLevels.reduce((a, b) => a + b, 0);
   const power = Math.min(1, (fireRate - 0.9) / 10 + (bulletCount) / 20 + (fireRange - 14) / 50);
@@ -1300,13 +1410,14 @@ function spawnEnemyGroup(baseSpawnZ) {
 }
 
 function spawnBigHeart(zPos) {
+  if (finishZ !== null && zPos <= finishZ) return;
   const e = acquireEnemyMesh();
   if (!e) return;
 
   const curDamage = Math.max(0, Math.round(calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })));
   const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
   const mean = (curDamage + bestDamage) / 2;
-  const health = Math.max(10, Math.round(mean * (0.6 + Math.random() * 0.4)));
+  const health = Math.max(10, Math.round(mean * (0.4 + Math.random() * 0.5)));
 
   e.scale.set(1.6, 1.6, 1.6); // Уменьшили с 2.0 до 1.6
   e.position.set((Math.random() - 0.5) * 3, 1.2, zPos);
@@ -1326,6 +1437,7 @@ function spawnBigHeart(zPos) {
 }
 
 function spawnWallAt(sideWall, zPos) {
+  if (finishZ !== null && zPos <= finishZ) return;
   const w = acquireWallMesh();
   let xCenter = 0;
 
@@ -1375,6 +1487,7 @@ function spawnWallAt(sideWall, zPos) {
 function spawnWave() {
   const gap = (typeof randSpawnGap === 'function') ? randSpawnGap() : (MIN_SPAWN_GAP * (1 + Math.random() * 0.5));
   const baseSpawnZ = lastSpawnZ - gap;
+  if (finishZ !== null && baseSpawnZ <= finishZ) return;
   if (baseSpawnZ > nailGroup.position.z + 20) return;
 
   let waveType;
@@ -1633,6 +1746,33 @@ function animate(time){
   prevTime = time;
 
   if (!started || gameOver) return;
+
+  // ---------- FINISH LOGIC ----------
+const elapsed = (time - songStartTime) / 1000;
+const timeLeft = SONG_DURATION - elapsed;
+
+if (!finishSpawned && timeLeft <= FINISH_PREP_TIME){
+  spawnFinishGate(nailGroup.position.z - 35);
+  finishSpawned = true;
+}
+
+if (finishGate && !finishPassed){
+  if (nailGroup.position.z <= finishGate.position.z){
+    finishPassed = true;
+    gameOver = true;
+    enemies.length = 0;
+    gates.length = 0;
+    showLeaderboardSubmit(computeScore(), 'Финиш!');
+    return;
+  }
+}
+
+if (finishGate){
+  const glow = finishGate.children[1];
+  glow.material.opacity = 0.2 + Math.sin(time * 0.004) * 0.1;
+}
+
+
   // очистить старых врагов без uuid (защита от старых сохранений/кэша)
   enemies = enemies.filter(e => e.uuid);
 
@@ -2196,7 +2336,8 @@ if (Array.isArray(walls) && walls.length) {
   const progress = Math.min(1, elapsedSec / SONG_DURATION);
   document.getElementById('progressFill').style.width = (progress * 100) + '%';
 
-  if (elapsedSec >= SONG_DURATION){
+// Даем +3 секунды запаса, чтобы игрок точно успел пересечь финишную черту физически
+  if (elapsedSec >= SONG_DURATION + 3){
     gameOver = true;
     showLeaderboardSubmit(computeScore(), 'Победа!');
     return;
