@@ -230,29 +230,233 @@ canvas{display:block}
   <div id="progressFill"></div>
 </div>
 
-<!-- preloader + menu -->
-<div id="preloader">
-  <h1>MIMO!</h1>
+<!-- === НОВОЕ ГЛАВНОЕ МЕНЮ (V2) === -->
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<style>
+    /* Подключаем жирный шрифт с засечками (Courier Prime) */
+    @import url('https://fonts.googleapis.com/css2?family=Courier+Prime:wght@700&display=swap');
 
-  <div id="social">
-    <a href="https://t.me/gvozdi_band"  target="_blank">Telegram</a>
-    <a href="https://vk.com/gvozdi_band" target="_blank">VK</a>
-    <a href="https://www.youtube.com/channel/UCzNrI47UMc8ie3cnITUW-Dg" target="_blank">YouTube</a>
-  </div>
+    /* Стиль для "рваных" кнопок */
+    .jagged-btn { 
+        clip-path: polygon(
+            0% 5%, 5% 0%, 15% 5%, 25% 0%, 35% 5%, 45% 0%, 55% 5%, 65% 0%, 75% 5%, 85% 0%, 95% 5%, 100% 0%,
+            100% 95%, 95% 100%, 85% 95%, 75% 100%, 65% 95%, 55% 100%, 45% 95%, 35% 100%, 25% 95%, 15% 100%, 5% 95%, 0% 100%
+        ); 
+    }
+    
+    /* Буквы названия (Arial Black) */
+    .ransom-title { 
+        font-family: 'Arial Black', 'Arial Bold', sans-serif; 
+        font-weight: 900;
+        text-transform: uppercase; 
+        text-shadow: 4px 4px 0px #000;
+    }
 
-  <button id="startBtn" disabled>Загрузка…</button>
-  <progress id="loadProgress" value="0" max="100" style="width:200px;height:10px;"></progress>
-  <span id="loadText">0 %</span>
+    /* Основной шрифт для всего остального */
+    .paper-font {
+        font-family: 'Courier Prime', serif;
+        font-weight: 700;
+    }
+
+    /* Анимация парения для фото */
+    @keyframes float { 0% { transform: translateY(0px) rotate(0deg); } 50% { transform: translateY(-10px) rotate(1deg); } 100% { transform: translateY(0px) rotate(0deg); } }
+    
+    /* Скотч */
+    .tape { background-color: rgba(255, 255, 255, 0.4); box-shadow: 0 1px 3px rgba(0,0,0,0.2); backdrop-filter: blur(2px); }
+
+    #mainMenu { position: fixed; inset: 0; z-index: 99999; background: #111; overflow: hidden; }
+    #loadProgress { display: none; }
+
+    /* Стили для модального окна (Правила) */
+    #rulesModal {
+        display: none; /* Скрыто по умолчанию */
+        position: fixed; inset: 0; z-index: 100000;
+        background: rgba(0,0,0,0.85);
+        backdrop-filter: blur(5px);
+        align-items: center; justify-content: center;
+    }
+</style>
+
+<div id="mainMenu" class="w-full h-screen text-white relative flex flex-col items-center justify-center bg-[#111] paper-font">
+    
+    <!-- ФОН -->
+    <div class="fixed inset-0 z-[-10] bg-gradient-to-br from-[#0a0a0a] via-[#111] to-[#0a0a0a]"></div>
+    <div class="fixed inset-0 z-[-5] overflow-hidden opacity-40 pointer-events-none">
+        <div class="absolute top-[-20%] left-[-10%] w-[80%] h-[150%] bg-blue-900/20 transform rotate-[30deg] blur-3xl"></div>
+    </div>
+    <!-- Сетка -->
+    <div class="fixed inset-0 z-[-4] opacity-[0.05]" style="background-image: linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px); background-size: 40px 40px;"></div>
+
+    <!-- КОНТЕНТ -->
+    <div class="relative w-full h-full max-w-[1600px] flex p-4 md:p-8 box-border z-10">
+        
+        <!-- ЛЕВАЯ ПАНЕЛЬ (Соцсети) -->
+        <div class="w-16 md:w-24 h-full flex flex-col justify-center items-start md:items-center gap-6 z-20 absolute left-4 md:static top-0 pointer-events-auto">
+            <a href="https://www.tiktok.com/@gvozdiband" target="_blank" class="group relative transition-transform hover:scale-110">
+                <div class="w-10 h-10 md:w-12 md:h-12 bg-black border-2 border-white flex items-center justify-center shadow-[4px_4px_0_white] group-hover:bg-[#00f2ea] transition-colors"><i class="fab fa-tiktok text-white group-hover:text-black text-xl"></i></div>
+            </a>
+            <a href="https://t.me/gvozdi_band" target="_blank" class="group relative transition-transform hover:scale-110">
+                <div class="w-10 h-10 md:w-12 md:h-12 bg-blue-500 border-2 border-white flex items-center justify-center shadow-[4px_4px_0_black]"><i class="fab fa-telegram-plane text-white text-xl"></i></div>
+            </a>
+            <a href="https://vk.com/gvozdi_band" target="_blank" class="group relative transition-transform hover:scale-110">
+                <div class="w-10 h-10 md:w-12 md:h-12 bg-[#0077FF] border-2 border-white flex items-center justify-center shadow-[4px_4px_0_black]"><i class="fab fa-vk text-white text-xl"></i></div>
+            </a>
+            <a href="https://www.youtube.com/channel/UCzNrI47UMc8ie3cnITUW-Dg" target="_blank" class="group relative transition-transform hover:scale-110">
+                <div class="w-10 h-10 md:w-12 md:h-12 bg-red-600 border-2 border-white flex items-center justify-center shadow-[4px_4px_0_black]"><i class="fab fa-youtube text-white text-xl"></i></div>
+            </a>
+        </div>
+
+        <!-- ЦЕНТР -->
+        <div class="flex-1 relative flex flex-col items-center justify-center">
+            
+            <!-- ФОТО ЛЕВОЕ (Скрыто на мобильных, видно на ПК) -->
+            <div class="absolute top-10 left-0 hidden lg:block animate-[float_7s_ease-in-out_infinite]">
+                <div class="relative w-56 h-64 transform -rotate-6 transition-transform hover:rotate-0 duration-500">
+                    <div class="absolute inset-0 bg-white p-2 shadow-[8px_8px_0_rgba(0,0,0,0.5)]">
+                        <!-- ЗАМЕНИ ССЫЛКУ НИЖЕ НА СВОЕ ФОТО -->
+                        <img src="https://images.unsplash.com/photo-1519638399535-1b036603ac77?q=80&w=400" class="w-full h-full object-cover grayscale contrast-125">
+                    </div>
+                    <div class="tape absolute -top-3 left-1/2 w-24 h-8 transform -translate-x-1/2 rotate-3"></div>
+                </div>
+            </div>
+
+            <!-- ЛОГОТИП И ЗАГОЛОВОК -->
+            <div class="mb-10 select-none relative flex flex-col items-center z-30">
+                <!-- МИМО (Arial Black) -->
+                <div class="flex gap-1 md:gap-3">
+                    <span class="ransom-title bg-white text-black text-7xl md:text-9xl p-1 md:p-2 border-4 border-black transform -rotate-2">М</span>
+                    <span class="ransom-title bg-black text-white text-7xl md:text-9xl p-1 md:p-2 border-4 border-white transform rotate-1">И</span>
+                    <span class="ransom-title bg-blue-600 text-white text-7xl md:text-9xl p-1 md:p-2 border-4 border-white transform -rotate-1">М</span>
+                    <span class="ransom-title bg-white text-black text-7xl md:text-9xl p-1 md:p-2 border-4 border-black transform rotate-2">О</span>
+                </div>
+                
+                <!-- ГВОЗДИ BAND (Синий фон) -->
+                <div class="mt-6 transform -rotate-1 bg-blue-700 text-white px-6 py-1 text-xl md:text-2xl border-2 border-white shadow-[5px_5px_0_rgba(0,0,0,1)]">
+                    ГВОЗДИ BAND
+                </div>
+                
+                <!-- КНОПКА СЛУШАТЬ ТРЕК (Бумажный стиль) -->
+                <a href="https://band.link/mimo_song" target="_blank" class="mt-8 transform rotate-1 hover:rotate-0 transition-transform">
+                    <div class="bg-white border-2 border-black px-6 py-3 shadow-[6px_6px_0_black] hover:shadow-[2px_2px_0_black] hover:translate-x-1 hover:translate-y-1 transition-all flex items-center gap-3">
+                        <i class="fas fa-play text-red-600"></i>
+                        <span class="text-black font-bold tracking-widest text-sm md:text-base">СЛУШАТЬ ТРЕК</span>
+                    </div>
+                </a>
+            </div>
+
+            <!-- КНОПКИ МЕНЮ -->
+            <div class="flex flex-col gap-5 items-center w-full max-w-sm z-30 mt-4">
+                
+                <!-- Кнопка ИГРАТЬ -->
+                <button id="startBtn" disabled class="group relative w-full h-20 transform transition-transform hover:scale-105 active:scale-95 cursor-not-allowed opacity-70">
+                    <div class="absolute inset-0 bg-black translate-x-2 translate-y-2 jagged-btn"></div>
+                    <div class="absolute inset-0 bg-white jagged-btn border-[3px] border-black flex items-center justify-center">
+                        <span id="btnText" class="text-4xl md:text-5xl text-black font-black uppercase tracking-widest z-10 group-hover:text-blue-700 transition-colors">
+                            ЗАГРУЗКА
+                        </span>
+                        <!-- Синий ховер -->
+                        <div class="absolute inset-0 bg-blue-500 transform -translate-x-full group-hover:translate-x-full transition-transform duration-300 opacity-20 skew-x-12"></div>
+                    </div>
+                </button>
+
+                <!-- Кнопка КАК ИГРАТЬ -->
+                <button onclick="document.getElementById('rulesModal').style.display='flex'" class="relative w-3/4 h-14 transform rotate-1 hover:rotate-0 hover:scale-105 transition-all">
+                    <div class="absolute inset-0 bg-black translate-x-1.5 translate-y-1.5" style="clip-path: polygon(2% 0, 100% 0, 98% 100%, 0% 98%)"></div>
+                    <div class="absolute inset-0 bg-blue-600 border-2 border-white flex items-center justify-center" style="clip-path: polygon(2% 0, 100% 0, 98% 100%, 0% 98%)">
+                        <span class="text-xl text-white font-bold tracking-wider">КАК ИГРАТЬ?</span>
+                    </div>
+                </button>
+
+                <div id="menuLoadStatus" class="font-mono text-xs text-white/40 mt-2">...</div>
+            </div>
+
+            <!-- ФОТО ПРАВОЕ (Скрыто на мобильных, видно на ПК) -->
+            <div class="absolute bottom-10 right-0 hidden lg:block animate-[float_8s_ease-in-out_infinite]">
+                <div class="relative w-60 h-72 transform rotate-3 transition-transform hover:rotate-0 duration-500">
+                    <div class="absolute inset-0 bg-white p-2 shadow-[8px_8px_0_rgba(0,0,0,0.5)]">
+                        <!-- ЗАМЕНИ ССЫЛКУ НИЖЕ НА СВОЕ ФОТО -->
+                        <img src="https://images.unsplash.com/photo-1533512930330-4ac257c86793?q=80&w=400" class="w-full h-full object-cover grayscale contrast-125">
+                    </div>
+                    <div class="tape absolute -top-3 left-1/2 w-24 h-8 transform -translate-x-1/2 -rotate-3"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ПРАВАЯ ПАНЕЛЬ (Лидерборд) -->
+        <div class="w-80 h-full hidden xl:flex items-center justify-center z-20 pl-8 pointer-events-none">
+            <div class="relative w-full transform rotate-2 transition-transform duration-300 pointer-events-auto">
+                <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 w-24 h-8 bg-white/30 tape z-30"></div>
+                <div class="bg-[#f4f4f4] p-1 shadow-[10px_10px_0px_rgba(0,0,0,0.8)] text-black">
+                    <div class="border-2 border-dashed border-gray-600 p-4 min-h-[300px]">
+                        <h2 class="text-xl font-black text-center bg-black text-white p-2 mb-4 -rotate-1">ТОП АГЕНТОВ</h2>
+                        <div id="menu-leaderboard-list" class="space-y-3 text-sm">
+                            <div class="animate-pulse text-center mt-10 text-gray-500">Загрузка...</div>
+                        </div>
+                        <div class="mt-6 border-t-2 border-black pt-2 flex justify-between items-center">
+                            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-800">MIMO SYSTEM</span>
+                            <div class="h-2 w-2 rounded-full bg-green-500 animate-pulse"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- МОДАЛЬНОЕ ОКНО "КАК ИГРАТЬ" -->
+<div id="rulesModal">
+    <div class="relative w-[90%] max-w-lg bg-white text-black p-2 shadow-[20px_20px_0_rgba(0,0,0,0.8)] transform rotate-1 paper-font">
+        <!-- Рамка -->
+        <div class="border-4 border-black p-6 flex flex-col gap-4">
+            
+            <h2 class="text-3xl font-black text-center uppercase bg-black text-white p-2 -rotate-1 mb-2">ИНСТРУКЦИЯ</h2>
+            
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-blue-600 text-white flex items-center justify-center font-bold text-2xl border-2 border-black flex-shrink-0">1</div>
+                <div>
+                    <h3 class="font-bold text-lg uppercase">УПРАВЛЕНИЕ</h3>
+                    <p class="text-sm">Води пальцем или мышкой влево-вправо, чтобы двигать толпу.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-red-600 text-white flex items-center justify-center font-bold text-2xl border-2 border-black flex-shrink-0">2</div>
+                <div>
+                    <h3 class="font-bold text-lg uppercase">СТРЕЛЬБА</h3>
+                    <p class="text-sm">Она автоматическая. Твоя цель — разбивать сердца и стены.</p>
+                </div>
+            </div>
+
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 bg-black text-white flex items-center justify-center font-bold text-2xl border-2 border-black flex-shrink-0">3</div>
+                <div>
+                    <h3 class="font-bold text-lg uppercase">ТОЛПА</h3>
+                    <p class="text-sm">Собирай зеленые ворота, избегай красных. Если гвозди кончатся — ты проиграл.</p>
+                </div>
+            </div>
+
+            <button onclick="document.getElementById('rulesModal').style.display='none'" class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 text-xl border-2 border-black shadow-[4px_4px_0_black] active:translate-y-1 active:shadow-none transition-all">
+                ПОНЯТНО!
+            </button>
+        </div>
+        
+        <!-- Скотч декоративный -->
+        <div class="absolute -top-4 left-1/2 w-32 h-10 bg-white/40 backdrop-blur-sm transform -translate-x-1/2 -rotate-2 shadow-sm"></div>
+    </div>
 </div>
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
 /* ---------- preloader with progress ---------- */
-const preEl      = document.getElementById('preloader');
+/* ---------- preloader -> mainMenu ---------- */
+const preEl      = document.getElementById('mainMenu'); 
 const startBtn   = document.getElementById('startBtn');
-const progressEl = document.getElementById('loadProgress');
-const textEl     = document.getElementById('loadText');
+const btnTextEl  = document.getElementById('btnText'); // Текст внутри кнопки
+const statusEl   = document.getElementById('menuLoadStatus'); // Текст под кнопкой
 
 
 let audioReady = false;
@@ -277,8 +481,7 @@ fetch(audioSrc)
             }
             loaded += value.byteLength;
             const pct = total ? (loaded / total * 100) : 0;
-            progressEl.value = pct;
-            textEl.textContent = `${Math.round(pct)} %`;
+            if(statusEl) statusEl.textContent = `Загрузка: ${Math.round(pct)}%`;
             controller.enqueue(value);
             pump();
           });
@@ -291,10 +494,12 @@ fetch(audioSrc)
   .then(blob => {
     bgmEl.src = URL.createObjectURL(blob);
     audioReady = true;
-    progressEl.value = 100;
-    textEl.textContent = '100 %';
+    if(statusEl) statusEl.textContent = 'Готово!';
     startBtn.disabled = false;
-    startBtn.textContent = 'Начать игру';
+    startBtn.classList.remove('cursor-not-allowed', 'opacity-70'); // Убираем серость
+    if(btnTextEl) btnTextEl.textContent = 'ИГРАТЬ';
+    // Запускаем отрисовку топа в меню
+    fetchAndRenderMenuTop();
   })
   .catch(() => {
     // если файл недоступен – всё равно позволяем играть без звука
@@ -1494,8 +1699,8 @@ function spawnWave() {
   const roll = Math.random();
 
 const elapsedSec = (performance.now() - songStartTime) / 1000;
-  // const isSecondThird = elapsedSec > SONG_DURATION / 3;
-  const isSecondThird = 1
+  const isSecondThird = elapsedSec > SONG_DURATION / 3;
+  //const isSecondThird = 1
 
   if (consecutiveEnemyWaves >= MAX_CONSECUTIVE_ENEMY_WAVES) {
     if (roll < 0.5) waveType = "gate";
@@ -2681,6 +2886,47 @@ async function showLeaderboardSubmit(finalScore, title){
 // Авто-подгрузка топа каждые 30 с (если хотите показывать топ постоянно)
 setInterval(()=>fetchAndRenderTop(10), 30000);
 fetchAndRenderTop(10); // начальная загрузка
+
+// Функция для отрисовки красивого топа в ГЛАВНОМ МЕНЮ
+async function fetchAndRenderMenuTop() {
+  const container = document.getElementById('menu-leaderboard-list');
+  if (!container) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/top?limit=5`); // Берем топ-5
+    if (!res.ok) throw new Error('fail');
+    const list = await res.json();
+
+    if (!list || list.length === 0) {
+      container.innerHTML = '<div class="text-center text-gray-500">Пока пусто...</div>';
+      return;
+    }
+
+    // Генерируем HTML для топа
+    container.innerHTML = list.map((x, i) => {
+      const name = escapeHtml(x.name || 'anon').slice(0, 12); 
+      const score = Number(x.score || 0).toLocaleString(); 
+      
+      let rankColor = 'text-gray-600';
+      if(i === 0) rankColor = 'text-red-600 font-bold';
+      if(i === 1) rankColor = 'text-blue-600 font-bold';
+      if(i === 2) rankColor = 'text-green-600 font-bold';
+
+      return `
+        <div class="flex items-center justify-between border-b border-gray-300 pb-1">
+            <div class="flex items-center gap-2">
+                <span class="${rankColor} text-lg w-4">${i + 1}</span>
+                <span class="text-black font-bold uppercase">${name}</span>
+            </div>
+            <span class="text-blue-800 font-bold">${score}</span>
+        </div>
+      `;
+    }).join('');
+
+  } catch (e) {
+    container.innerHTML = '<div class="text-center text-red-400 text-xs">Ошибка загрузки</div>';
+  }
+}
 </script>
 
 </html>
