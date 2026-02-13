@@ -541,6 +541,29 @@ const audioSrc = 'song.mp3';            // ваш файл
 const bgmEl    = new Audio();           // создаём динамически
 bgmEl.loop = true;
 
+// Звуковые эффекты
+const sounds = {
+  shoot: new Audio('sounds/shoot.mp3'),
+  wallBreak: new Audio('sounds/wall_break.mp3'),
+  bossKill: new Audio('sounds/boss_kill.mp3'),
+  damage: new Audio('sounds/damage.mp3')
+};
+
+// Предзагрузка звуков (чтобы не было задержки при первом воспроизведении)
+Object.values(sounds).forEach(sound => {
+  sound.load();
+  sound.volume = 0.5; // Громкость 50% (можно изменить)
+});
+
+// Функция воспроизведения звука
+function playSound(soundName) {
+  const sound = sounds[soundName];
+  if (sound) {
+    sound.currentTime = 0; // Сброс на начало
+    sound.play().catch(() => {}); // Игнорируем ошибки (например, если звук ещё не загружен)
+  }
+}
+
 // грузим fetch -> blob
 fetch(audioSrc)
   .then(r => {
@@ -2039,6 +2062,9 @@ function shoot(time){
     bMesh.userData.pierce = level;
 
     bullets.push({mesh: bMesh, vx:0, vz:-BULLET_SPEED, pierce: level});
+    
+    // Звук выстрела (только для первого гвоздя в залпе, чтобы не было каши)
+    if (i === 0) playSound('shoot');
   });
 }
 
@@ -2364,6 +2390,7 @@ if (bullets.length) {
           if (e.userData.hp <= 0) {
             heartCount += Math.round(e.userData.initialHp || 10);
             spawnScoreText(e.position.x, 0.1, e.position.z, "+" + Math.round(e.userData.initialHp));
+            playSound('bossKill'); // Звук смерти босса
             // spawnBurst(e.position.x, 1, e.position.z, 0xff0040, 20); // Много ошметков
             updateScoreUI();
             releaseEnemyMesh(e);
@@ -2428,6 +2455,7 @@ if (bullets.length) {
       wallCount++;
       // Появляется ниже (0.8) и частицы более "холодного" цвета
       spawnScoreText(w.position.x, 0, w.position.z, "+100");
+      playSound('wallBreak'); // Звук разрушения витрины
       // spawnBurst(w.position.x, w.position.y-0.2, w.position.z, 0xffffff, 15); // Белые осколки
       // spawnBurst(w.position.x, w.position.y-0.2, w.position.z, 0x00ffff, 10); // Ярко-голубые искры
       updateScoreUI();
@@ -2460,6 +2488,7 @@ if (bullets.length) {
       if (dist < collisionRadius){
         hit = true;
         shakeTime = 0.4; // Трясем экран при ударе
+        playSound('damage'); // Звук получения урона от врага
 
         if (e.userData.isBigHeart) {
            // Логика Большого Сердца: вычитаем его жизни из уровня гвоздя
@@ -2569,6 +2598,7 @@ if (bullets.length) {
         for (let i = 0; i < -d.val; i++) nailLevels.pop();
         redistributeLevels();
         shakeTime = 0.4; // Трясем экран при ударе
+        playSound('damage'); // Звук получения урона от врага
       }
 
       rebuildNailFormation();
@@ -2644,7 +2674,10 @@ if (Array.isArray(walls) && walls.length) {
 
     // Суммарный урон стенке
     const totalWallDamage = dmgEntries.reduce((s,e)=>s+e.dmg, 0);
-    if (totalWallDamage > 0) shakeTime = 0.4; // Тряска, если игрок потерял уровни об стену
+    if (totalWallDamage > 0) {
+      shakeTime = 0.4; // Тряска, если игрок потерял уровни об стену
+      playSound('damage'); // Звук получения урона от стены
+    }
 
     // Применяем урон к стенке атомарно
     w.userData.health = (w.userData.health || 0) - totalWallDamage;
@@ -2713,6 +2746,7 @@ if (Array.isArray(walls) && walls.length) {
       }
       wallCount++;
       spawnScoreText(w.position.x, 2, w.position.z, "+100");
+      playSound('wallBreak'); // Звук разрушения витрины
       // spawnBurst(w.position.x, 1, w.position.z, 0x88ccee, 15); // Голубые осколки стекла
       updateScoreUI();
       releaseWallMesh(w);
