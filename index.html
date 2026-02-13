@@ -1971,7 +1971,10 @@ const elapsedSec = (performance.now() - songStartTime) / 1000;
 
 /* ---------- controls ---------- */
 let mouseX = 0;
-const INPUT_SCALE = 2.2; // 1.0 = как сейчас, 0.8 = край достигается раньше
+// Проверяем, является ли устройство мобильным
+const isMobile = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
+// Для мобилок оставляем 1.3, для ПК ставим 2.2, чтобы не тянуться мышкой к краям
+const INPUT_SCALE = isMobile ? 1.7 : 2.2;
 
 window.addEventListener('mousemove', e => {
   const norm = (e.clientX / innerWidth - 0.5); // от -0.5 до +0.5
