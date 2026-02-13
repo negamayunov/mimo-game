@@ -1486,6 +1486,17 @@ let maxParams = {
   range: fireRange
 };
 
+// База данных лучших гейтов по рядам (Row ID -> Gate Data)
+const bestGatesByRow = new Map(); 
+
+// Начальные параметры игры (от которых мы будем пересчитывать сложность)
+const baseParams = {
+  count: 1,
+  nailLevels: [1],
+  rate: 1,
+  range: 15
+};
+
 // constants for damage calc
 const CONTACT_DIST = 0.7; // дистанция контакта (как в игровом коде ~0.7)
 const TIME_CAP = 60;      // safety cap если цель не движется (сек)
@@ -1637,37 +1648,59 @@ function chooseBestGateFromPair(g1, g2){
   return d1 > d2 ? { chosen:g1, applied:a1, info:'d1>d2' } : { chosen:g2, applied:a2, info:'d2>d1' };
 }
 
+function recalculateMaxParams() {
+  // Начинаем с чистых базовых параметров
+  let currentMax = {
+    count: baseParams.count,
+    nailLevels: [...baseParams.nailLevels],
+    rate: baseParams.rate,
+    range: baseParams.range
+  };
+
+  // Проходим по всем зарегистрированным лучшим гейтам в истории игры
+  bestGatesByRow.forEach((gate) => {
+    currentMax = applyGateToParams(currentMax, gate);
+  });
+
+  // Обновляем глобальный maxParams
+  maxParams.count = currentMax.count;
+  maxParams.nailLevels = [...currentMax.nailLevels];
+  maxParams.rate = currentMax.rate;
+  maxParams.range = currentMax.range;
+}
+
 // применяем одиночный гейт к maxParams (только если положительный, согласно правилу)
-function handleSingleGateForMaxParams(g){
-  const base = { ...maxParams, nailLevels: cloneLevels(maxParams.nailLevels) };
-  const after = applyGateToParams(base, g);
-  if (isGatePositiveForBase(base, g)){
-    // обновляем internal best params (не меняя реальную игру)
-    maxParams.count = after.count;
-    maxParams.nailLevels = after.nailLevels.slice();
-    maxParams.rate = after.rate;
-    maxParams.range = after.range;
-    // debug
-    // console.log('Single gate applied to maxParams', g.label || g.action, after);
+function handleSingleGateForMaxParams(g, rowZ) {
+  // Округляем Z, чтобы стены в одном ряду имели один ID
+  const rowID = Math.round(rowZ);
+  
+  // Если в этом ряду еще не было гейта ИЛИ новый гейт лучше старого
+  if (!bestGatesByRow.has(rowID)) {
+    bestGatesByRow.set(rowID, g);
+    recalculateMaxParams();
   } else {
-    // одиночный отрицательный не влияет
-    // console.log('Single negative gate ignored for maxParams', g.label || g.action);
+    // Сравниваем: станет ли урон больше, если заменить старый гейт на этот?
+    const oldGate = bestGatesByRow.get(rowID);
+    const tempParamsWithOld = applyGateToParams(baseParams, oldGate);
+    const tempParamsWithNew = applyGateToParams(baseParams, g);
+    
+    if (calcMaxDamageForOneTarget(tempParamsWithNew) > calcMaxDamageForOneTarget(tempParamsWithOld)) {
+      bestGatesByRow.set(rowID, g);
+      recalculateMaxParams();
+    }
   }
 }
 
 // при паре гейтов обновляем maxParams по лучшему
-function handlePairGateForMaxParams(g1, g2){
+function handlePairGateForMaxParams(g1, g2, rowZ) {
+  const rowID = Math.round(rowZ);
+  // Выбираем лучший из двух
   const pick = chooseBestGateFromPair(g1, g2);
-  if (pick && pick.applied){
-    maxParams.count = pick.applied.count;
-    maxParams.nailLevels = pick.applied.nailLevels.slice();
-    maxParams.rate = pick.applied.rate;
-    maxParams.range = pick.applied.range;
-    // debug
-    // console.log('Pair chosen gate applied to maxParams:', pick.info, pick.chosen.label || pick.chosen.action);
-  }
+  
+  // Регистрируем лучший гейт из пары для этого ряда
+  bestGatesByRow.set(rowID, pick.chosen);
+  recalculateMaxParams();
 }
-
 
 /* ---------- RUNTIME FLAGS ---------- */
 let started   = false;
@@ -1687,7 +1720,7 @@ let finishPassed = false;
 let finishZ = null;
 
 // за сколько секунд до конца показываем финиш
-const FINISH_PREP_TIME = 12; // сек
+const FINISH_PREP_TIME = 24; // сек
 
 function computeScore(){
   return (Number(heartCount) || 0) + (Number(wallCount) || 0) * 100;
@@ -2368,7 +2401,7 @@ function spawnBigHeart(zPos) {
   const curDamage = Math.max(0, Math.round(calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })));
   const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
   const mean = (curDamage + bestDamage) / 2;
-  const health = Math.max(10, Math.round(mean * (0.4 + Math.random() * 0.5)));
+  const health = Math.max(10, Math.round(mean * (0.4 + Math.random() * 0.4)));
 
   e.scale.set(1.6, 1.6, 1.6); // Уменьшили с 2.0 до 1.6
   e.position.set((Math.random() - 0.5) * 3, 1.2, zPos);
@@ -2519,13 +2552,13 @@ const elapsedSec = (performance.now() - songStartTime) / 1000;
 
     if (sides.length === 1) {
       const g = pickGate();
-      handleSingleGateForMaxParams(g);
+      handleSingleGateForMaxParams(g, baseSpawnZ);
       spawnGate(sides[0], baseSpawnZ, g);
     } else {
       let g = pickGate();
       let g2;
       do { g2 = pickGate(); } while (g2.label === g.label);
-      handlePairGateForMaxParams(g, g2);
+      handlePairGateForMaxParams(g, g2, baseSpawnZ);
       spawnGate(sides[0], baseSpawnZ, g);
       spawnGate(sides[1], baseSpawnZ, g2);
     }
