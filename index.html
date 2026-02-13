@@ -242,6 +242,296 @@ canvas{display:block}
     font-size: 14px !important;
   }
 }
+/* ========== МЕНЮ ПАУЗЫ ========== */
+#pauseOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(5px);
+  z-index: 99998;
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+
+#pauseOverlay.active {
+  display: flex;
+}
+
+#pauseMenu {
+  width: min(480px, 90%);
+  background: #f4f4f4;
+  color: #000;
+  border: 4px solid #000;
+  box-shadow: 15px 15px 0px rgba(0,0,0,0.8);
+  position: relative;
+  padding: 2rem;
+  transform: rotate(-1deg);
+  font-family: 'Merriweather', serif;
+}
+
+#pauseMenu::before {
+  content: '';
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-2deg);
+  width: 120px;
+  height: 30px;
+  background: rgba(255,255,255,0.4);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.pause-title {
+  font-family: 'Arial Black', sans-serif;
+  font-weight: 900;
+  text-transform: uppercase;
+  background: #000;
+  color: #fff;
+  padding: 12px;
+  transform: rotate(1deg);
+  text-align: center;
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 2px solid #000;
+}
+
+.pause-section {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px dashed #ccc;
+}
+
+.pause-section:last-of-type {
+  border-bottom: none;
+}
+
+.pause-label {
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* Кнопки выбора трека */
+.track-select {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.track-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 10px 16px;
+  border: 2px solid #000;
+  background: #fff;
+  font-family: 'Merriweather', serif;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+
+.track-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0 #000;
+}
+
+.track-btn.active {
+  background: #0077FF;
+  color: #fff;
+  box-shadow: 4px 4px 0 #000;
+}
+
+/* Слайдеры громкости */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.volume-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  background: #ddd;
+  border: 2px solid #000;
+  outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  background: #0077FF;
+  border: 2px solid #000;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  background: #0077FF;
+  border: 2px solid #000;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #000;
+}
+
+.volume-value {
+  min-width: 50px;
+  text-align: right;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 1rem;
+}
+
+/* Кнопка MUTE */
+.mute-btn {
+  width: 40px;
+  height: 40px;
+  border: 2px solid #000;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  transition: all 0.15s;
+}
+
+.mute-btn:hover {
+  transform: scale(1.05);
+}
+
+.mute-btn.muted {
+  background: #ff0040;
+  color: #fff;
+}
+
+/* Кнопки управления */
+.pause-actions {
+  display: flex;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.pause-btn {
+  flex: 1;
+  padding: 14px 20px;
+  border: 3px solid #000;
+  font-family: 'Arial Black', sans-serif;
+  font-weight: 900;
+  font-size: 1rem;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.pause-btn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 #000;
+}
+
+.pause-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0 0 0 #000;
+}
+
+.pause-btn.primary {
+  background: #0077FF;
+  color: #fff;
+}
+
+.pause-btn.secondary {
+  background: #fff;
+  color: #000;
+}
+
+/* Индикатор горячей клавиши */
+.hotkey-hint {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #666;
+  background: #fff;
+  border: 1px solid #000;
+  padding: 4px 8px;
+  transform: rotate(2deg);
+}
+/* ========== КНОПКА ПАУЗЫ В ИГРЕ ========== */
+/* ========== КНОПКА ПАУЗЫ В ИГРЕ ========== */
+#pauseGameBtn {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 50px;
+  height: 50px;
+  background: #0077FF; /* Синий фон */
+  border: 3px solid #000;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.8);
+  z-index: 99990;
+  cursor: pointer;
+  display: none; /* Показываем только после старта игры */
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: #fff; /* Белый значок */
+  transition: all 0.15s;
+  transform: rotate(-2deg);
+}
+
+#pauseGameBtn:hover {
+  background: #0055cc; /* Темнее при наведении */
+  transform: rotate(0deg) scale(1.05);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.8);
+}
+
+#pauseGameBtn:active {
+  background: #004499;
+  transform: rotate(0deg) scale(0.95);
+  box-shadow: 2px 2px 0 rgba(0,0,0,0.8);
+}
+
+/* На мобильных чуть больше для удобства */
+@media (max-width: 700px) {
+  #pauseGameBtn {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    bottom: 25px;
+    right: 25px;
+  }
+}
+
+#pauseGameBtn.visible {
+  display: flex;
+}
+/* На мобильных чуть больше для удобства */
+@media (max-width: 700px) {
+  #pauseGameBtn {
+    width: 60px;
+    height: 60px;
+    font-size: 24px;
+    bottom: 25px;
+    right: 25px;
+  }
+}
+
+#pauseGameBtn.visible {
+  display: flex;
+}
 </style>
 </head>
 <body>
@@ -525,21 +815,163 @@ canvas{display:block}
     </div>
 </div>
 
+<!-- МЕНЮ ПАУЗЫ -->
+<div id="pauseOverlay">
+  <div id="pauseMenu">
+    <div class="hotkey-hint">ESC</div>
+    <h2 class="pause-title">ПАУЗА</h2>
+    
+    <!-- Выбор трека -->
+    <div class="pause-section">
+      <label class="pause-label">Музыкальная дорожка</label>
+      <div class="track-select">
+        <button class="track-btn active" data-track="original" id="trackOriginal">Инструментал</button>
+        <button class="track-btn" data-track="vocal" id="trackInstrumental">Оригинал</button>
+      </div>
+    </div>
+    
+    <!-- Громкость музыки -->
+    <div class="pause-section">
+      <label class="pause-label">Громкость музыки</label>
+      <div class="volume-control">
+        <button class="mute-btn" id="muteMusicBtn">🔊</button>
+        <input type="range" class="volume-slider" id="musicVolume" min="0" max="100" value="70">
+        <span class="volume-value" id="musicVolumeValue">70%</span>
+      </div>
+    </div>
+    
+    <!-- Громкость эффектов -->
+    <div class="pause-section">
+      <label class="pause-label">Громкость эффектов</label>
+      <div class="volume-control">
+        <button class="mute-btn" id="muteSfxBtn">🔊</button>
+        <input type="range" class="volume-slider" id="sfxVolume" min="0" max="100" value="50">
+        <span class="volume-value" id="sfxVolumeValue">50%</span>
+      </div>
+    </div>
+    
+    <!-- Кнопки действий -->
+    <div class="pause-actions">
+      <button class="pause-btn primary" id="resumeBtn">Продолжить</button>
+      <button class="pause-btn secondary" onclick="location.reload()">Рестарт</button>
+    </div>
+  </div>
+</div>
+
+<!-- КНОПКА ПАУЗЫ В ИГРЕ -->
+<button id="pauseGameBtn" title="Пауза (ESC)">⏸</button>
+
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
 
-/* ---------- preloader with progress ---------- */
-/* ---------- preloader -> mainMenu ---------- */
-const preEl      = document.getElementById('mainMenu'); 
-const startBtn   = document.getElementById('startBtn');
-const btnTextEl  = document.getElementById('btnText'); // Текст внутри кнопки
-const statusEl   = document.getElementById('menuLoadStatus'); // Текст под кнопкой
+/* ---------- AUDIO SYSTEM ---------- */
+const audioSystem = {
+  bgm: new Audio(),
+  currentTrack: 'original',
+  isMuted: false,
+  musicVolume: 0.7,
+  sfxVolume: 0.5,
+  pausedAt: 0,
+  isPlaying: false,
+  
+  tracks: {
+  original: 'song_instrumental.mp3',    // Теперь инструментал по умолчанию
+  vocal: 'song.mp3'                      // Вокальная версия (бывший "оригинал")
+},
+  
+  init() {
+  this.bgm.loop = false; // Отключаем повтор
+  this.bgm.volume = this.musicVolume;
+  this.loadTrack('original');
+  
+  // Слушаем окончание трека
+  this.bgm.addEventListener('ended', () => {
+    this.isPlaying = false;
+    // Если игра ещё идёт и не на паузе — можно добавить логику
+    // Например, автопереход на другой трек или просто тишина
+  });
+},
+  
+  loadTrack(trackName) {
+    this.currentTrack = trackName;
+    this.bgm.src = this.tracks[trackName];
+    this.bgm.load();
+    if (this.isPlaying && !gamePaused) {
+      this.bgm.play().catch(() => {});
+    }
+  },
+  
+  play() {
+  this.isPlaying = true;
+  if (!gamePaused && this.bgm.paused && this.bgm.currentTime >= this.bgm.duration - 0.1) {
+    // Если трек закончился, не начинаем заново автоматически
+    return;
+  }
+  if (!gamePaused) {
+    this.bgm.play().catch(() => {});
+  }
+},
+  
+  pause() {
+    this.pausedAt = this.bgm.currentTime;
+    this.bgm.pause();
+  },
+  
+  resume() {
+  if (this.isPlaying && !gamePaused) {
+    // Проверяем, не закончился ли трек
+    if (this.bgm.currentTime >= this.bgm.duration - 0.1) {
+      // Трек закончился — не возобновляем
+      return;
+    }
+    this.bgm.play().catch(() => {});
+  }
+},
+  
+  setMusicVolume(val) {
+    this.musicVolume = val;
+    this.bgm.volume = this.isMuted ? 0 : val;
+  },
+  
+  setSfxVolume(val) {
+    this.sfxVolume = val;
+    // Обновляем громкость всех эффектов
+    Object.values(sounds).forEach(sound => {
+      sound.volume = this.isMuted ? 0 : val;
+    });
+  },
 
-
-let audioReady = false;
-const audioSrc = 'song.mp3';            // ваш файл
-const bgmEl    = new Audio();           // создаём динамически
-bgmEl.loop = true;
+  playSoundWithPitch(soundName, baseRate = 1.0, variation = 0.15) {
+    if (this.isMuted) return;
+    const sound = sounds[soundName];
+    if (!sound) return;
+    
+    // Создаём клон для независимого playbackRate
+    // (чтобы не прерывать уже играющий звук)
+    const clone = sound.cloneNode();
+    
+    // Случайный питч: baseRate ± variation
+    // Например: 0.85 ... 1.15 для baseRate=1, variation=0.15
+    const randomPitch = baseRate + (Math.random() * variation * 2 - variation);
+    clone.playbackRate = Math.max(0.5, Math.min(2.0, randomPitch)); // ограничиваем разумными пределами
+    
+    clone.volume = this.isMuted ? 0 : this.sfxVolume;
+    clone.play().catch(() => {});
+    
+    // Автоочистка после проигрывания
+    clone.onended = () => clone.remove();
+  },
+  
+  toggleMute() {
+    this.isMuted = !this.isMuted;
+    const vol = this.isMuted ? 0 : this.musicVolume;
+    this.bgm.volume = vol;
+    Object.values(sounds).forEach(sound => {
+      sound.volume = this.isMuted ? 0 : this.sfxVolume;
+    });
+    return this.isMuted;
+  }
+};
 
 // Звуковые эффекты
 const sounds = {
@@ -549,39 +981,55 @@ const sounds = {
   damage: new Audio('sounds/damage.mp3')
 };
 
-// Предзагрузка звуков (чтобы не было задержки при первом воспроизведении)
+// Предзагрузка звуков
 Object.values(sounds).forEach(sound => {
   sound.load();
-  sound.volume = 0.5; // Громкость 50% (можно изменить)
+  sound.volume = 0.5;
 });
 
 // Функция воспроизведения звука
-function playSound(soundName) {
-  const sound = sounds[soundName];
-  if (sound) {
-    sound.currentTime = 0; // Сброс на начало
-    sound.play().catch(() => {}); // Игнорируем ошибки (например, если звук ещё не загружен)
+function playSound(soundName, usePitch = false) {
+  if (usePitch) {
+    audioSystem.playSoundWithPitch(soundName, 1.0, 1);
+  } else {
+    const sound = sounds[soundName];
+    if (sound) {
+      sound.currentTime = 0;
+      sound.volume = audioSystem.sfxVolume;
+      sound.play().catch(() => {});
+    }
   }
 }
 
-// грузим fetch -> blob
-fetch(audioSrc)
+/* ---------- preloader with progress ---------- */
+const preEl = document.getElementById('mainMenu');
+const startBtn = document.getElementById('startBtn');
+const btnTextEl = document.getElementById('btnText');
+const statusEl = document.getElementById('menuLoadStatus');
+
+let audioReady = false;
+
+// Инициализируем аудиосистему
+audioSystem.init();
+
+// Загружаем оригинальный трек
+fetch(audioSystem.tracks.original)
   .then(r => {
     if (!r.ok) throw new Error('network');
     const total = +r.headers.get('content-length');
     let loaded = 0;
     const reader = r.body.getReader();
     const stream = new ReadableStream({
-      start(controller){
-        function pump(){
+      start(controller) {
+        function pump() {
           reader.read().then(({done, value}) => {
-            if (done){
+            if (done) {
               controller.close();
               return;
             }
             loaded += value.byteLength;
             const pct = total ? (loaded / total * 100) : 0;
-            if(statusEl) statusEl.textContent = `Загрузка: ${Math.round(pct)}%`;
+            if (statusEl) statusEl.textContent = `Загрузка: ${Math.round(pct)}%`;
             controller.enqueue(value);
             pump();
           });
@@ -592,31 +1040,28 @@ fetch(audioSrc)
     return new Response(stream).blob();
   })
   .then(blob => {
-    bgmEl.src = URL.createObjectURL(blob);
+    audioSystem.bgm.src = URL.createObjectURL(blob);
     audioReady = true;
-    if(statusEl) statusEl.textContent = 'Готово!';
+    if (statusEl) statusEl.textContent = 'Готово!';
     startBtn.disabled = false;
-    startBtn.classList.remove('cursor-not-allowed', 'opacity-70'); // Убираем серость
-    if(btnTextEl) btnTextEl.textContent = 'ИГРАТЬ';
-    // Запускаем отрисовку топа в меню
+    startBtn.classList.remove('cursor-not-allowed', 'opacity-70');
+    if (btnTextEl) btnTextEl.textContent = 'ИГРАТЬ';
     fetchAndRenderMenuTop();
   })
   .catch(() => {
-    // если файл недоступен – всё равно позволяем играть без звука
     startBtn.disabled = false;
     startBtn.textContent = 'Играть без звука';
   });
 
-// старт
+// Старт игры
 startBtn.addEventListener('click', () => {
-  if (audioReady) bgmEl.play().catch(() => {});
+  audioSystem.play();
   preEl.style.display = 'none';
-  
-  // Показываем счётчик только сейчас
   document.getElementById('scoreboard').style.display = 'block';
-
   started = true;
-  songStartTime = performance.now(); // фиксируем старт
+  songStartTime = performance.now();
+  // Сбрасываем время трека при новой игре
+  audioSystem.bgm.currentTime = 0;
 });
 
 /* ---------- basic scene ---------- */
@@ -636,6 +1081,139 @@ dirLight.position.set(0, 10, 5);
 scene.add(dirLight);
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.8)); // чуть усилим общий свет
+
+/* ---------- PAUSE SYSTEM ---------- */
+let gamePaused = false;
+const pauseOverlay = document.getElementById('pauseOverlay');
+
+
+// Элементы управления паузой
+const trackOriginalBtn = document.getElementById('trackOriginal');
+const trackInstrumentalBtn = document.getElementById('trackInstrumental');
+const musicVolumeSlider = document.getElementById('musicVolume');
+const musicVolumeValue = document.getElementById('musicVolumeValue');
+const sfxVolumeSlider = document.getElementById('sfxVolume');
+const sfxVolumeValue = document.getElementById('sfxVolumeValue');
+const muteMusicBtn = document.getElementById('muteMusicBtn');
+const muteSfxBtn = document.getElementById('muteSfxBtn');
+const resumeBtn = document.getElementById('resumeBtn');
+
+const pauseGameBtn = document.getElementById('pauseGameBtn');
+
+// Показываем кнопку паузы при старте игры
+const originalStartBtnClick = startBtn.onclick;
+startBtn.addEventListener('click', () => {
+  pauseGameBtn.classList.add('visible');
+});
+
+// Клик по кнопке паузы в игре
+pauseGameBtn.addEventListener('click', (e) => {
+  e.stopPropagation(); // Чтобы не сработал другой клик
+  togglePause();
+});
+
+// Обновляем иконку кнопки в зависимости от состояния
+const originalTogglePause = togglePause;
+togglePause = function() {
+  const wasPaused = gamePaused;
+  originalTogglePause();
+  pauseGameBtn.textContent = gamePaused ? '▶' : '⏸';
+};
+
+function togglePause() {
+  if (!started || gameOver) return;
+  
+  gamePaused = !gamePaused;
+  
+  if (gamePaused) {
+    // Пауза
+    audioSystem.pause();
+    pauseOverlay.classList.add('active');
+    // Показываем курсор только если это не мобильное устройство
+    if (!isMobile) {
+      document.body.style.cursor = 'default';
+    }
+  } else {
+    // Возобновление
+    audioSystem.resume();
+    pauseOverlay.classList.remove('active');
+    // Всегда возвращаем курсор в default (не none), чтобы не терять его
+    document.body.style.cursor = 'default';
+  }
+}
+
+// Обработчики выбора трека
+trackOriginalBtn.addEventListener('click', () => {
+  trackOriginalBtn.classList.add('active');
+  trackInstrumentalBtn.classList.remove('active');
+  audioSystem.loadTrack('original'); // Инструментал
+});
+
+trackInstrumentalBtn.addEventListener('click', () => {
+  trackInstrumentalBtn.classList.add('active');
+  trackOriginalBtn.classList.remove('active');
+  audioSystem.loadTrack('vocal'); // Вокал
+});
+
+// Обработчики громкости музыки
+musicVolumeSlider.addEventListener('input', (e) => {
+  const val = parseInt(e.target.value) / 100;
+  audioSystem.setMusicVolume(val);
+  musicVolumeValue.textContent = e.target.value + '%';
+  updateMuteButton(muteMusicBtn, val === 0);
+});
+
+muteMusicBtn.addEventListener('click', () => {
+  const isMuted = audioSystem.toggleMute();
+  musicVolumeSlider.value = isMuted ? 0 : Math.round(audioSystem.musicVolume * 100);
+  musicVolumeValue.textContent = (isMuted ? 0 : Math.round(audioSystem.musicVolume * 100)) + '%';
+  updateMuteButton(muteMusicBtn, isMuted);
+  // Синхронизируем кнопку SFX тоже
+  sfxVolumeSlider.value = isMuted ? 0 : Math.round(audioSystem.sfxVolume * 100);
+  sfxVolumeValue.textContent = (isMuted ? 0 : Math.round(audioSystem.sfxVolume * 100)) + '%';
+  updateMuteButton(muteSfxBtn, isMuted);
+});
+
+// Обработчики громкости эффектов
+sfxVolumeSlider.addEventListener('input', (e) => {
+  const val = parseInt(e.target.value) / 100;
+  audioSystem.setSfxVolume(val);
+  sfxVolumeValue.textContent = e.target.value + '%';
+  updateMuteButton(muteSfxBtn, val === 0);
+});
+
+muteSfxBtn.addEventListener('click', () => {
+  const isMuted = audioSystem.toggleMute();
+  sfxVolumeSlider.value = isMuted ? 0 : Math.round(audioSystem.sfxVolume * 100);
+  sfxVolumeValue.textContent = (isMuted ? 0 : Math.round(audioSystem.sfxVolume * 100)) + '%';
+  updateMuteButton(muteSfxBtn, isMuted);
+  // Синхронизируем кнопку музыки тоже
+  musicVolumeSlider.value = isMuted ? 0 : Math.round(audioSystem.musicVolume * 100);
+  musicVolumeValue.textContent = (isMuted ? 0 : Math.round(audioSystem.musicVolume * 100)) + '%';
+  updateMuteButton(muteMusicBtn, isMuted);
+});
+
+function updateMuteButton(btn, isMuted) {
+  btn.textContent = isMuted ? '🔇' : '🔊';
+  btn.classList.toggle('muted', isMuted);
+}
+
+// Кнопка продолжить
+resumeBtn.addEventListener('click', togglePause);
+
+// Горячая клавиша ESC
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && started && !gameOver) {
+    togglePause();
+  }
+});
+
+// Клик по оверлею закрывает меню (кроме самого меню)
+pauseOverlay.addEventListener('click', (e) => {
+  if (e.target === pauseOverlay) {
+    togglePause();
+  }
+});
 
 /* ---------- player ---------- */
 // легкие геометрии и материал для гвоздя (меньше полигонов + дешевый шейдер)
@@ -2064,7 +2642,7 @@ function shoot(time){
     bullets.push({mesh: bMesh, vx:0, vz:-BULLET_SPEED, pierce: level});
     
     // Звук выстрела (только для первого гвоздя в залпе, чтобы не было каши)
-    if (i === 0) playSound('shoot');
+    if (i === 0) playSound('shoot', true,); // true = с вариацией питча
   });
 }
 
@@ -2118,6 +2696,11 @@ function fadeOutGate(gateGroup){
 /* ---------- main loop ---------- */
 function animate(time){
   requestAnimationFrame(animate);
+  // Не обновляем игру во время паузы, но продолжаем рендерить
+  if (gamePaused) {
+    renderer.render(scene, camera);
+    return;
+  }
 
   // считаем dt в секундах (кэпим, чтобы не было скачков)
   if (!prevTime) prevTime = time;
