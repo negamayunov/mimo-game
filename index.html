@@ -1926,12 +1926,12 @@ const gateRegistry = [
   { weight: 15, factory: () => ({ label: 'ГВОЗДИ -1', action: 'count', val: -1 }) },
 
   { weight: 15, factory: () => {
-      const base = 0.25 * (1 + Math.floor(Math.random() * 4)); // 0.25…1
-      const mult = [0.5, 0.75, 1, 1.5, 2][Math.floor(Math.random() * 5)];
-      const total = +(base * mult).toFixed(2);
-      return { label: `СТРЕЛЬБА ${total >= 0 ? '+' : ''}${total}`, action: 'rate', val: total };
+      // Генерируем значение от 0.2 до 0.8. Большие значения (0.8) выпадают реже.
+      const val = +(0.2 + Math.pow(Math.random(), 1.5) * 0.6).toFixed(1);
+      return { label: `СТРЕЛЬБА +${val}`, action: 'rate', val: val };
     }
   },
+  
   { weight: 10, factory: () => ({ label: 'СТРЕЛЬБА -0.5', action: 'rate', val: -0.5 }) },
 
   { weight: 15, factory: () => {
