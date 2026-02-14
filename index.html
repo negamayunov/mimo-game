@@ -3,7 +3,7 @@
 <head>
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <meta charset="UTF-8"/>
-<title>YA SNOVA MIMO – Good View & Crowds</title>
+<title>МИМО!</title>
 <style>
 body{margin:0;overflow:hidden;background:#111;font-family:sans-serif;color:#fff}
 canvas{display:block}
@@ -639,7 +639,7 @@ canvas{display:block}
             <div class="absolute inset-0 bg-white/10" style="clip-path: polygon(20% 0%, 100% 0, 100% 100%, 0% 100%);"></div>
             
             <!-- ФОТО (Улица/Город) -->
-            <img src="https://avatars.yandex.net/get-music-content/16469857/fbae641a.a.40209658-1/m1000x1000" 
+            <img src="https://sun9-10.userapi.com/s/v1/ig2/URLbrhF_f0-VJKf_UFx1eXkR8J17uTeoq1HtJ46xuvadE892aROEiH3YVmXVnA1RaGkAhvANWgL4RhFuvVQy_W_i.jpg?quality=95&as=32x32,48x48,72x72,108x108,160x160,240x240,360x360,480x480,540x540,640x640,720x720,1080x1080,1280x1280,1440x1440,2560x2560&from=bu&cs=2560x0" 
                  class="absolute inset-0 w-full h-full object-cover grayscale contrast-125 brightness-75"
                  style="clip-path: polygon(25% 0%, 100% 0, 100% 100%, 0% 100%);">
             
@@ -1479,24 +1479,19 @@ let nailCount   = 1;
 let nailLevels  = [1];
 
 // ---------- Max-params & damage calc helpers (новое) ----------
-let maxParams = {
-  count: nailCount,
-  nailLevels: nailLevels.slice(),
-  rate: fireRate,
-  range: fireRange
-};
-
-// База данных лучших гейтов по рядам (Row ID -> Gate Data)
-const bestGatesByRow = new Map(); 
-
-// Начальные параметры игры (от которых мы будем пересчитывать сложность)
-const baseParams = {
+// Начальные параметры (база)
+const baseStats = {
   count: 1,
   nailLevels: [1],
   rate: 1,
   range: 15
 };
 
+// Теоретический максимум
+let maxParams = { ...baseStats, nailLevels: [...baseStats.nailLevels] };
+
+// История лучших гейтов: Map(координата Z => лучший гейт в этом ряду)
+const bestGatesHistory = new Map();
 // constants for damage calc
 const CONTACT_DIST = 0.7; // дистанция контакта (как в игровом коде ~0.7)
 const TIME_CAP = 60;      // safety cap если цель не движется (сек)
@@ -1649,57 +1644,60 @@ function chooseBestGateFromPair(g1, g2){
 }
 
 function recalculateMaxParams() {
-  // Начинаем с чистых базовых параметров
-  let currentMax = {
-    count: baseParams.count,
-    nailLevels: [...baseParams.nailLevels],
-    rate: baseParams.rate,
-    range: baseParams.range
+  // Начинаем с чистой базы
+  let temp = { 
+    count: baseStats.count, 
+    nailLevels: [...baseStats.nailLevels], 
+    rate: baseStats.rate, 
+    range: baseStats.range 
   };
 
-  // Проходим по всем зарегистрированным лучшим гейтам в истории игры
-  bestGatesByRow.forEach((gate) => {
-    currentMax = applyGateToParams(currentMax, gate);
-  });
+  // Сортируем историю: в нашей игре игрок едет от 0 в сторону уменьшения (0, -10, -50)
+  // Поэтому "ранние" гейты имеют больший Z (ближе к 0)
+  const sortedZ = Array.from(bestGatesHistory.keys()).sort((a, b) => b - a);
 
-  // Обновляем глобальный maxParams
-  maxParams.count = currentMax.count;
-  maxParams.nailLevels = [...currentMax.nailLevels];
-  maxParams.rate = currentMax.rate;
-  maxParams.range = currentMax.range;
+  for (let z of sortedZ) {
+    const gate = bestGatesHistory.get(z);
+    temp = applyGateToParams(temp, gate);
+  }
+
+  // Обновляем глобальный максимум
+  maxParams.count = temp.count;
+  maxParams.nailLevels = [...temp.nailLevels];
+  maxParams.rate = temp.rate;
+  maxParams.range = temp.range;
 }
 
-// применяем одиночный гейт к maxParams (только если положительный, согласно правилу)
-function handleSingleGateForMaxParams(g, rowZ) {
-  // Округляем Z, чтобы стены в одном ряду имели один ID
-  const rowID = Math.round(rowZ);
+function registerGateOpportunity(gate, z) {
+  // Округляем Z до 0.5, чтобы стены в одном ряду точно склеились в один ID
+  const rowId = Math.round(z * 2) / 2;
   
-  // Если в этом ряду еще не было гейта ИЛИ новый гейт лучше старого
-  if (!bestGatesByRow.has(rowID)) {
-    bestGatesByRow.set(rowID, g);
+  if (!bestGatesHistory.has(rowId)) {
+    // Если в этом ряду еще ничего не было - просто добавляем, если гейт не "пустой"
+    bestGatesHistory.set(rowId, gate);
     recalculateMaxParams();
   } else {
-    // Сравниваем: станет ли урон больше, если заменить старый гейт на этот?
-    const oldGate = bestGatesByRow.get(rowID);
-    const tempParamsWithOld = applyGateToParams(baseParams, oldGate);
-    const tempParamsWithNew = applyGateToParams(baseParams, g);
+    // Если в ряду уже есть гейт, сравниваем их потенциал
+    const currentBestInRow = bestGatesHistory.get(rowId);
     
-    if (calcMaxDamageForOneTarget(tempParamsWithNew) > calcMaxDamageForOneTarget(tempParamsWithOld)) {
-      bestGatesByRow.set(rowID, g);
+    // Считаем статы, которые были у игрока ТОЧНО ДО этого ряда Z
+    let statsBefore = { ...baseStats, nailLevels: [...baseStats.nailLevels] };
+    const sortedZ = Array.from(bestGatesHistory.keys()).sort((a, b) => b - a);
+    for (let prevZ of sortedZ) {
+      if (prevZ > rowId) { // Если Z больше, значит этот ряд был пройдён раньше
+        statsBefore = applyGateToParams(statsBefore, bestGatesHistory.get(prevZ));
+      }
+    }
+
+    // Сравниваем урон: что будет, если применить старый гейт и что будет, если новый
+    const dmgOld = calcMaxDamageForOneTarget(applyGateToParams(statsBefore, currentBestInRow));
+    const dmgNew = calcMaxDamageForOneTarget(applyGateToParams(statsBefore, gate));
+
+    if (dmgNew > dmgOld) {
+      bestGatesHistory.set(rowId, gate);
       recalculateMaxParams();
     }
   }
-}
-
-// при паре гейтов обновляем maxParams по лучшему
-function handlePairGateForMaxParams(g1, g2, rowZ) {
-  const rowID = Math.round(rowZ);
-  // Выбираем лучший из двух
-  const pick = chooseBestGateFromPair(g1, g2);
-  
-  // Регистрируем лучший гейт из пары для этого ряда
-  bestGatesByRow.set(rowID, pick.chosen);
-  recalculateMaxParams();
 }
 
 /* ---------- RUNTIME FLAGS ---------- */
@@ -2401,7 +2399,7 @@ function spawnBigHeart(zPos) {
   const curDamage = Math.max(0, Math.round(calcMaxDamageForOneTarget({ nailLevels: nailLevels.slice(), rate: fireRate, range: fireRange })));
   const bestDamage = Math.max(1, Math.round(calcMaxDamageForOneTarget(maxParams)));
   const mean = (curDamage + bestDamage) / 2;
-  const health = Math.max(10, Math.round(mean * (0.4 + Math.random() * 0.4)));
+  const health = Math.max(10, Math.round(mean * (0.3 + Math.random() * 0.7)));
 
   e.scale.set(1.6, 1.6, 1.6); // Уменьшили с 2.0 до 1.6
   e.position.set((Math.random() - 0.5) * 3, 1.2, zPos);
@@ -2452,7 +2450,7 @@ function spawnWallAt(sideWall, zPos) {
     health = Math.max(5 + Math.random() * 4, mean * mul);
     unbreak = true;
   } else {
-    const mul = 0.4 + Math.random() * (0.7 - 0.4);
+    const mul = 0.4 + Math.random() * (0.5);
     health = Math.max(5 + Math.random() * 4, mean * mul);
   }
 
@@ -2478,7 +2476,7 @@ function spawnWave() {
   const roll = Math.random();
 
 const elapsedSec = (performance.now() - songStartTime) / 1000;
-  const isSecondThird = elapsedSec > SONG_DURATION / 3;
+  const isSecondQuarter = elapsedSec > SONG_DURATION / 4;
   //const isSecondThird = 1
 
   if (consecutiveEnemyWaves >= MAX_CONSECUTIVE_ENEMY_WAVES) {
@@ -2486,7 +2484,7 @@ const elapsedSec = (performance.now() - songStartTime) / 1000;
     else waveType = "wall";
   } else {
     // Если хотя бы вторая треть игры, даем 20% шанс на Большое Сердце вместо обычных врагов
-    if (roll < 0.2 && isSecondThird) {
+    if (roll < 0.2 && isSecondQuarter) {
        waveType = "big_heart";
     } else if (roll < 0.5) {
        waveType = "enemy";
@@ -2552,14 +2550,19 @@ const elapsedSec = (performance.now() - songStartTime) / 1000;
 
     if (sides.length === 1) {
       const g = pickGate();
-      handleSingleGateForMaxParams(g, baseSpawnZ);
+      // Если гейт положительный, учитываем его в MaxDamage
+      if (isGatePositiveForBase(maxParams, g)) registerGateOpportunity(g, baseSpawnZ);
       spawnGate(sides[0], baseSpawnZ, g);
     } else {
-      let g = pickGate();
+      let g1 = pickGate();
       let g2;
-      do { g2 = pickGate(); } while (g2.label === g.label);
-      handlePairGateForMaxParams(g, g2, baseSpawnZ);
-      spawnGate(sides[0], baseSpawnZ, g);
+      do { g2 = pickGate(); } while (g2.label === g1.label);
+      
+      // Из пары ворот "идеальный игрок" всегда выберет лучшие
+      const bestG = chooseBestGateFromPair(g1, g2).chosen;
+      if (isGatePositiveForBase(maxParams, bestG)) registerGateOpportunity(bestG, baseSpawnZ);
+      
+      spawnGate(sides[0], baseSpawnZ, g1);
       spawnGate(sides[1], baseSpawnZ, g2);
     }
 
@@ -2778,7 +2781,9 @@ const elapsed = (time - songStartTime) / 1000;
 const timeLeft = SONG_DURATION - elapsed;
 
 if (!finishSpawned && timeLeft <= FINISH_PREP_TIME){
-  spawnFinishGate(nailGroup.position.z - 35);
+  // Рассчитываем точное расстояние, которое игрок проедет до конца песни
+  const distanceToFinish = timeLeft * playerSpeed;
+  spawnFinishGate(nailGroup.position.z - distanceToFinish);
   finishSpawned = true;
 }
 
@@ -3063,9 +3068,8 @@ if (bullets.length) {
       spawnGate(w.userData.side, w.userData.z, gateData, WALL_WIDTH);
 
       // update internal best params for this newly spawned gate (safe-guard)
-      if (typeof handleSingleGateForMaxParams === 'function') {
-        try { handleSingleGateForMaxParams(gateData); } catch (err) { console.warn('handleSingleGateForMaxParams failed', err); }
-      }
+      // Регистрируем выпавший из стены гейт в системе сложности
+      registerGateOpportunity(gateData, w.userData.z);
 
       // remove wall (return to pool)
       wallCount++;
@@ -3357,9 +3361,9 @@ if (Array.isArray(walls) && walls.length) {
       else gateData = { label: 'ГВОЗДИ +2', action: 'count', val: 2 };
 
       spawnGate(w.userData.side || 0, w.userData.z || nailGroup.position.z, gateData, WALL_WIDTH);
-      if (typeof handleSingleGateForMaxParams === 'function') {
-        try { handleSingleGateForMaxParams(gateData); } catch (err) { console.warn('handleSingleGateForMaxParams failed', err); }
-      }
+      // Регистрируем выпавший из стены гейт в системе сложности
+      registerGateOpportunity(gateData, w.userData.z);
+      
       wallCount++;
       spawnScoreText(w.position.x, 2, w.position.z, "+100");
       playSound('wallBreak'); // Звук разрушения витрины
@@ -3399,8 +3403,18 @@ if (Array.isArray(walls) && walls.length) {
   }
 
   // округляем для читаемости
-  const maxD = Math.round(calcMaxDamageForOneTarget(maxParams));
   const curD = Math.round(calcCurrentDamage());
+  let maxD = Math.round(calcMaxDamageForOneTarget(maxParams));
+
+  // АВТО-СИНХРОНИЗАЦИЯ: Если игрок превзошел идеал, обновляем идеал
+  // if (curD > maxD) {
+  //   maxParams.count = nailCount;
+  //   maxParams.nailLevels = [...nailLevels];
+  //   maxParams.rate = fireRate;
+  //   maxParams.range = fireRange;
+  //   maxD = curD; // Теперь они равны
+  // }
+  
   const maxEl = document.getElementById('maxd');
   const curEl = document.getElementById('curd');
   if (maxEl) maxEl.textContent = maxD;
