@@ -1927,7 +1927,7 @@ const gateRegistry = [
 
   { weight: 15, factory: () => {
       // Генерируем значение от 0.2 до 0.8. Большие значения (0.8) выпадают реже.
-      const val = +(0.1 + Math.pow(Math.random(), 1.5) * 0.7).toFixed(1);
+      const val = +(0.1 + Math.pow(Math.random(), 1.9) * 0.6).toFixed(1);
       return { label: `СТРЕЛЬБА +${val}`, action: 'rate', val: val };
     }
   },
@@ -1935,7 +1935,7 @@ const gateRegistry = [
   { weight: 10, factory: () => {
     // Генерируем значение от 0.3 до 0.7. 
     // Благодаря Math.pow(..., 2) большие штрафы (0.7) будут падать реже.
-    const val = +(0.3 + Math.pow(Math.random(), 1.5) * 0.4).toFixed(1);
+    const val = +(0.2 + Math.pow(Math.random(), 1.5) * 0.5).toFixed(1);
     return { label: `СТРЕЛЬБА -${val}`, action: 'rate', val: -val };
   }
 },
